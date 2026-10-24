@@ -34,10 +34,10 @@ var ShouldAlignDuplicateHeadersWithStructFieldOrder = false
 // TagName defines key in the struct field's tag to scan
 var TagName = "csv"
 
-// TagSeparator defines seperator string for multiple csv tags in struct fields
+// TagSeparator defines separator string for multiple csv tags in struct fields
 var TagSeparator = ","
 
-// FieldSeperator defines how to combine parent struct with child struct
+// FieldsCombiner defines how to combine parent struct with child struct
 var FieldsCombiner = "."
 
 // Normalizer is a function that takes and returns a string. It is applied to
@@ -138,12 +138,12 @@ func getCSVReader(in io.Reader) CSVReader {
 // Marshal functions
 
 // MarshalFile saves the interface as CSV in the file.
-func MarshalFile(in interface{}, file *os.File) (err error) {
+func MarshalFile(in any, file *os.File) (err error) {
 	return Marshal(in, file)
 }
 
 // MarshalString returns the CSV string from the interface.
-func MarshalString(in interface{}) (out string, err error) {
+func MarshalString(in any) (out string, err error) {
 	bufferString := bytes.NewBufferString(out)
 	if err := Marshal(in, bufferString); err != nil {
 		return "", err
@@ -152,7 +152,7 @@ func MarshalString(in interface{}) (out string, err error) {
 }
 
 // MarshalStringWithoutHeaders returns the CSV string from the interface.
-func MarshalStringWithoutHeaders(in interface{}) (out string, err error) {
+func MarshalStringWithoutHeaders(in any) (out string, err error) {
 	bufferString := bytes.NewBufferString(out)
 	if err := MarshalWithoutHeaders(in, bufferString); err != nil {
 		return "", err
@@ -161,7 +161,7 @@ func MarshalStringWithoutHeaders(in interface{}) (out string, err error) {
 }
 
 // MarshalBytes returns the CSV bytes from the interface.
-func MarshalBytes(in interface{}) (out []byte, err error) {
+func MarshalBytes(in any) (out []byte, err error) {
 	bufferString := bytes.NewBuffer(out)
 	if err := Marshal(in, bufferString); err != nil {
 		return nil, err
@@ -170,7 +170,7 @@ func MarshalBytes(in interface{}) (out []byte, err error) {
 }
 
 // MarshalBytesWithoutHeaders returns the CSV bytes from the interface.
-func MarshalBytesWithoutHeaders(in interface{}) (out []byte, err error) {
+func MarshalBytesWithoutHeaders(in any) (out []byte, err error) {
 	bufferString := bytes.NewBuffer(out)
 	if err := MarshalWithoutHeaders(in, bufferString); err != nil {
 		return nil, err
@@ -179,34 +179,34 @@ func MarshalBytesWithoutHeaders(in interface{}) (out []byte, err error) {
 }
 
 // Marshal returns the CSV in writer from the interface.
-func Marshal(in interface{}, out io.Writer) (err error) {
+func Marshal(in any, out io.Writer) (err error) {
 	writer := getCSVWriter(out)
 	return writeTo(writer, in, false)
 }
 
 // MarshalWithoutHeaders returns the CSV in writer from the interface.
-func MarshalWithoutHeaders(in interface{}, out io.Writer) (err error) {
+func MarshalWithoutHeaders(in any, out io.Writer) (err error) {
 	writer := getCSVWriter(out)
 	return writeTo(writer, in, true)
 }
 
 // MarshalChan returns the CSV read from the channel.
-func MarshalChan(c <-chan interface{}, out CSVWriter) error {
+func MarshalChan(c <-chan any, out CSVWriter) error {
 	return writeFromChan(out, c, false)
 }
 
 // MarshalChanWithoutHeaders returns the CSV read from the channel.
-func MarshalChanWithoutHeaders(c <-chan interface{}, out CSVWriter) error {
+func MarshalChanWithoutHeaders(c <-chan any, out CSVWriter) error {
 	return writeFromChan(out, c, true)
 }
 
 // MarshalCSV returns the CSV in writer from the interface.
-func MarshalCSV(in interface{}, out CSVWriter) (err error) {
+func MarshalCSV(in any, out CSVWriter) (err error) {
 	return writeTo(out, in, false)
 }
 
 // MarshalCSVWithoutHeaders returns the CSV in writer from the interface.
-func MarshalCSVWithoutHeaders(in interface{}, out CSVWriter) (err error) {
+func MarshalCSVWithoutHeaders(in any, out CSVWriter) (err error) {
 	return writeTo(out, in, true)
 }
 
@@ -214,62 +214,62 @@ func MarshalCSVWithoutHeaders(in interface{}, out CSVWriter) (err error) {
 // Unmarshal functions
 
 // UnmarshalFile parses the CSV from the file in the interface.
-func UnmarshalFile(in *os.File, out interface{}) error {
+func UnmarshalFile(in *os.File, out any) error {
 	return Unmarshal(in, out)
 }
 
 // UnmarshalMultipartFile parses the CSV from the multipart file in the interface.
-func UnmarshalMultipartFile(in *multipart.File, out interface{}) error {
+func UnmarshalMultipartFile(in *multipart.File, out any) error {
 	return Unmarshal(convertTo(in), out)
 }
 
 // UnmarshalFileWithErrorHandler parses the CSV from the file in the interface.
-func UnmarshalFileWithErrorHandler(in *os.File, errHandler ErrorHandler, out interface{}) error {
+func UnmarshalFileWithErrorHandler(in *os.File, errHandler ErrorHandler, out any) error {
 	return UnmarshalWithErrorHandler(in, errHandler, out)
 }
 
 // UnmarshalString parses the CSV from the string in the interface.
-func UnmarshalString(in string, out interface{}) error {
+func UnmarshalString(in string, out any) error {
 	return Unmarshal(strings.NewReader(in), out)
 }
 
 // UnmarshalBytes parses the CSV from the bytes in the interface.
-func UnmarshalBytes(in []byte, out interface{}) error {
+func UnmarshalBytes(in []byte, out any) error {
 	return Unmarshal(bytes.NewReader(in), out)
 }
 
 // Unmarshal parses the CSV from the reader in the interface.
-func Unmarshal(in io.Reader, out interface{}) error {
+func Unmarshal(in io.Reader, out any) error {
 	return readTo(newSimpleDecoderFromReader(in), out)
 }
 
 // Unmarshal parses the CSV from the reader in the interface.
-func UnmarshalWithErrorHandler(in io.Reader, errHandle ErrorHandler, out interface{}) error {
+func UnmarshalWithErrorHandler(in io.Reader, errHandle ErrorHandler, out any) error {
 	return readToWithErrorHandler(newSimpleDecoderFromReader(in), errHandle, out)
 }
 
 // UnmarshalWithoutHeaders parses the CSV from the reader in the interface.
-func UnmarshalWithoutHeaders(in io.Reader, out interface{}) error {
+func UnmarshalWithoutHeaders(in io.Reader, out any) error {
 	return readToWithoutHeaders(newSimpleDecoderFromReader(in), out)
 }
 
 // UnmarshalCSVWithoutHeaders parses a headerless CSV with passed in CSV reader
-func UnmarshalCSVWithoutHeaders(in CSVReader, out interface{}) error {
+func UnmarshalCSVWithoutHeaders(in CSVReader, out any) error {
 	return readToWithoutHeaders(csvDecoder{in}, out)
 }
 
 // UnmarshalDecoder parses the CSV from the decoder in the interface
-func UnmarshalDecoder(in Decoder, out interface{}) error {
+func UnmarshalDecoder(in Decoder, out any) error {
 	return readTo(in, out)
 }
 
 // UnmarshalCSV parses the CSV from the reader in the interface.
-func UnmarshalCSV(in CSVReader, out interface{}) error {
+func UnmarshalCSV(in CSVReader, out any) error {
 	return readTo(csvDecoder{in}, out)
 }
 
 // UnmarshalCSVToMap parses a CSV of 2 columns into a map.
-func UnmarshalCSVToMap(in CSVReader, out interface{}) error {
+func UnmarshalCSVToMap(in CSVReader, out any) error {
 	decoder := NewSimpleDecoderFromCSVReader(in)
 	header, err := decoder.GetCSVRow()
 	if err != nil {
@@ -280,7 +280,7 @@ func UnmarshalCSVToMap(in CSVReader, out interface{}) error {
 	}
 	outValue, outType := getConcreteReflectValueAndType(out)
 	if outType.Kind() != reflect.Map {
-		return fmt.Errorf("cannot use " + outType.String() + ", only map supported")
+		return fmt.Errorf("cannot use %s, only map supported", outType.String())
 	}
 	keyType := outType.Key()
 	valueType := outType.Elem()
@@ -307,7 +307,7 @@ func UnmarshalCSVToMap(in CSVReader, out interface{}) error {
 
 // UnmarshalToChan parses the CSV from the reader and send each value in the chan c.
 // The channel must have a concrete type.
-func UnmarshalToChan(in io.Reader, c interface{}) error {
+func UnmarshalToChan(in io.Reader, c any) error {
 	if c == nil {
 		return fmt.Errorf("goscv: channel is %v", c)
 	}
@@ -315,7 +315,7 @@ func UnmarshalToChan(in io.Reader, c interface{}) error {
 }
 
 // UnmarshalToChanWithErrorHandler parses the CSV from the reader in the interface.
-func UnmarshalToChanWithErrorHandler(in io.Reader, errorHandler ErrorHandler, c interface{}) error {
+func UnmarshalToChanWithErrorHandler(in io.Reader, errorHandler ErrorHandler, c any) error {
 	if c == nil {
 		return fmt.Errorf("goscv: channel is %v", c)
 	}
@@ -324,7 +324,7 @@ func UnmarshalToChanWithErrorHandler(in io.Reader, errorHandler ErrorHandler, c 
 
 // UnmarshalToChanWithoutHeaders parses the CSV from the reader and send each value in the chan c.
 // The channel must have a concrete type.
-func UnmarshalToChanWithoutHeaders(in io.Reader, c interface{}) error {
+func UnmarshalToChanWithoutHeaders(in io.Reader, c any) error {
 	if c == nil {
 		return fmt.Errorf("goscv: channel is %v", c)
 	}
@@ -333,7 +333,7 @@ func UnmarshalToChanWithoutHeaders(in io.Reader, c interface{}) error {
 
 // UnmarshalDecoderToChan parses the CSV from the decoder and send each value in the chan c.
 // The channel must have a concrete type.
-func UnmarshalDecoderToChan(in SimpleDecoder, c interface{}) error {
+func UnmarshalDecoderToChan(in SimpleDecoder, c any) error {
 	if c == nil {
 		return fmt.Errorf("goscv: channel is %v", c)
 	}
@@ -342,20 +342,20 @@ func UnmarshalDecoderToChan(in SimpleDecoder, c interface{}) error {
 
 // UnmarshalStringToChan parses the CSV from the string and send each value in the chan c.
 // The channel must have a concrete type.
-func UnmarshalStringToChan(in string, c interface{}) error {
+func UnmarshalStringToChan(in string, c any) error {
 	return UnmarshalToChan(strings.NewReader(in), c)
 }
 
 // UnmarshalBytesToChan parses the CSV from the bytes and send each value in the chan c.
 // The channel must have a concrete type.
-func UnmarshalBytesToChan(in []byte, c interface{}) error {
+func UnmarshalBytesToChan(in []byte, c any) error {
 	return UnmarshalToChan(bytes.NewReader(in), c)
 }
 
 // UnmarshalToCallback parses the CSV from the reader and send each value to the given func f.
 // The func must look like func(Struct). If its last return value is an error,
 // the parser is drained without further callback calls before returning that error.
-func UnmarshalToCallback(in io.Reader, f interface{}) error {
+func UnmarshalToCallback(in io.Reader, f any) error {
 	valueFunc := reflect.ValueOf(f)
 	t := reflect.TypeOf(f)
 	if t.NumIn() != 1 {
@@ -400,7 +400,7 @@ func UnmarshalToCallback(in io.Reader, f interface{}) error {
 
 // UnmarshalDecoderToCallback parses the CSV from the decoder and send each value to the given func f.
 // The func must look like func(Struct).
-func UnmarshalDecoderToCallback(in SimpleDecoder, f interface{}) error {
+func UnmarshalDecoderToCallback(in SimpleDecoder, f any) error {
 	valueFunc := reflect.ValueOf(f)
 	t := reflect.TypeOf(f)
 	if t.NumIn() != 1 {
@@ -428,13 +428,13 @@ func UnmarshalDecoderToCallback(in SimpleDecoder, f interface{}) error {
 
 // UnmarshalBytesToCallback parses the CSV from the bytes and send each value to the given func f.
 // The func must look like func(Struct).
-func UnmarshalBytesToCallback(in []byte, f interface{}) error {
+func UnmarshalBytesToCallback(in []byte, f any) error {
 	return UnmarshalToCallback(bytes.NewReader(in), f)
 }
 
 // UnmarshalStringToCallback parses the CSV from the string and send each value to the given func f.
 // The func must look like func(Struct).
-func UnmarshalStringToCallback(in string, c interface{}) (err error) {
+func UnmarshalStringToCallback(in string, c any) (err error) {
 	return UnmarshalToCallback(strings.NewReader(in), c)
 }
 
@@ -445,7 +445,7 @@ func UnmarshalStringToCallback(in string, c interface{}) (err error) {
 // parser and propagate the error to caller.
 //
 // The func must look like func(Struct) error.
-func UnmarshalToCallbackWithError(in io.Reader, f interface{}) error {
+func UnmarshalToCallbackWithError(in io.Reader, f any) error {
 	valueFunc := reflect.ValueOf(f)
 	t := reflect.TypeOf(f)
 	if t.NumIn() != 1 {
@@ -505,7 +505,7 @@ func UnmarshalToCallbackWithError(in io.Reader, f interface{}) error {
 // parser and propagate the error to caller.
 //
 // The func must look like func(Struct) error.
-func UnmarshalBytesToCallbackWithError(in []byte, f interface{}) error {
+func UnmarshalBytesToCallbackWithError(in []byte, f any) error {
 	return UnmarshalToCallbackWithError(bytes.NewReader(in), f)
 }
 
@@ -516,7 +516,7 @@ func UnmarshalBytesToCallbackWithError(in []byte, f interface{}) error {
 // parser and propagate the error to caller.
 //
 // The func must look like func(Struct) error.
-func UnmarshalStringToCallbackWithError(in string, c interface{}) (err error) {
+func UnmarshalStringToCallbackWithError(in string, c any) (err error) {
 	return UnmarshalToCallbackWithError(strings.NewReader(in), c)
 }
 

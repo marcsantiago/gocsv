@@ -10,11 +10,11 @@ type CSVDate struct {
 	Date string
 }
 
-func (self *CSVDate) UnmarshalCSV(text string) error {
-	if self == nil {
-		self = &CSVDate{}
+func (c *CSVDate) UnmarshalCSV(text string) error {
+	if c == nil {
+		c = &CSVDate{}
 	}
-	self.Date = text
+	c.Date = text
 	return nil
 }
 

@@ -140,11 +140,11 @@ func convertTo(file *multipart.File) io.Reader {
 	return io.Reader(*file)
 }
 
-func readTo(decoder Decoder, out interface{}) error {
+func readTo(decoder Decoder, out any) error {
 	return readToWithErrorHandler(decoder, nil, out)
 }
 
-func readToWithErrorHandler(decoder Decoder, errHandler ErrorHandler, out interface{}) error {
+func readToWithErrorHandler(decoder Decoder, errHandler ErrorHandler, out any) error {
 	outValue, outType := getConcreteReflectValueAndType(out) // Get the concrete type (not pointer) (Slice<?> or Array<?>)
 	if err := ensureOutType(outType); err != nil {
 		return err
@@ -174,7 +174,7 @@ func readToWithErrorHandler(decoder Decoder, errHandler ErrorHandler, out interf
 	headers := normalizeHeaders(csvRows[0])
 	body := csvRows[1:]
 
-	csvHeadersLabels := make(map[int]*fieldInfo, len(outInnerStructInfo.Fields)) // Used to store the correspondance header <-> position in CSV
+	csvHeadersLabels := make(map[int]*fieldInfo, len(outInnerStructInfo.Fields)) // Used to store the correspondence header <-> position in CSV
 
 	headerCount := map[string]int{}
 	for i, csvColumnHeader := range headers {
@@ -215,7 +215,7 @@ func readToWithErrorHandler(decoder Decoder, errHandler ErrorHandler, out interf
 					}
 					if err := fieldTypeUnmarshallerWithKeys.UnmarshalCSVWithFields(headers[j], csvColumnContent); err != nil {
 						parseError := csv.ParseError{
-							Line:   i + 2, //add 2 to account for the header & 0-indexing of arrays
+							Line:   i + 2, // add 2 to account for the header & 0-indexing of arrays
 							Column: j + 1,
 							Err:    err,
 						}
@@ -232,7 +232,7 @@ func readToWithErrorHandler(decoder Decoder, errHandler ErrorHandler, out interf
 				}
 				if err := setInnerField(&outInner, outInnerWasPointer, fieldInfo.IndexChain, value, fieldInfo.omitEmpty); err != nil { // Set field of struct
 					parseError := csv.ParseError{
-						Line:   i + 2, //add 2 to account for the header & 0-indexing of arrays
+						Line:   i + 2, // add 2 to account for the header & 0-indexing of arrays
 						Column: j + 1,
 						Err:    err,
 					}
@@ -253,7 +253,7 @@ func readToWithErrorHandler(decoder Decoder, errHandler ErrorHandler, out interf
 	return nil
 }
 
-func readEach(decoder SimpleDecoder, errHandler ErrorHandler, c interface{}) error {
+func readEach(decoder SimpleDecoder, errHandler ErrorHandler, c any) error {
 	outValue, outType := getConcreteReflectValueAndType(c) // Get the concrete type (not pointer)
 	if outType.Kind() != reflect.Chan {
 		return fmt.Errorf("cannot use %v with type %s, only channel supported", c, outType)
@@ -277,7 +277,7 @@ func readEach(decoder SimpleDecoder, errHandler ErrorHandler, c interface{}) err
 	if len(outInnerStructInfo.Fields) == 0 {
 		return ErrNoStructTags
 	}
-	csvHeadersLabels := make(map[int]*fieldInfo, len(outInnerStructInfo.Fields)) // Used to store the correspondance header <-> position in CSV
+	csvHeadersLabels := make(map[int]*fieldInfo, len(outInnerStructInfo.Fields)) // Used to store the correspondence header <-> position in CSV
 	headerCount := map[string]int{}
 	for i, csvColumnHeader := range headers {
 		curHeaderCount := headerCount[csvColumnHeader]
@@ -324,7 +324,7 @@ func readEach(decoder SimpleDecoder, errHandler ErrorHandler, c interface{}) err
 					}
 					if err := fieldTypeUnmarshallerWithKeys.UnmarshalCSVWithFields(headers[j], csvColumnContent); err != nil {
 						parseError := csv.ParseError{
-							Line:   i + 2, //add 2 to account for the header & 0-indexing of arrays
+							Line:   i + 2, // add 2 to account for the header & 0-indexing of arrays
 							Column: j + 1,
 							Err:    err,
 						}
@@ -344,7 +344,7 @@ func readEach(decoder SimpleDecoder, errHandler ErrorHandler, c interface{}) err
 
 				if err := setInnerField(&outInner, outInnerWasPointer, fieldInfo.IndexChain, value, fieldInfo.omitEmpty); err != nil { // Set field of struct
 					parseError := &csv.ParseError{
-						Line:   i + 2, //add 2 to account for the header & 0-indexing of arrays
+						Line:   i + 2, // add 2 to account for the header & 0-indexing of arrays
 						Column: j + 1,
 						Err:    err,
 					}
@@ -367,7 +367,7 @@ func readEach(decoder SimpleDecoder, errHandler ErrorHandler, c interface{}) err
 	return nil
 }
 
-func readEachWithoutHeaders(decoder SimpleDecoder, c interface{}) error {
+func readEachWithoutHeaders(decoder SimpleDecoder, c any) error {
 	outValue, outType := getConcreteReflectValueAndType(c) // Get the concrete type (not pointer) (Slice<?> or Array<?>)
 	if err := ensureOutType(outType); err != nil {
 		return err
@@ -402,7 +402,7 @@ func readEachWithoutHeaders(decoder SimpleDecoder, c interface{}) error {
 			fieldInfo := outInnerStructInfo.Fields[j]
 			if err := setInnerField(&outInner, outInnerWasPointer, fieldInfo.IndexChain, csvColumnContent, fieldInfo.omitEmpty); err != nil { // Set field of struct
 				return &csv.ParseError{
-					Line:   i + 2, //add 2 to account for the header & 0-indexing of arrays
+					Line:   i + 2, // add 2 to account for the header & 0-indexing of arrays
 					Column: j + 1,
 					Err:    err,
 				}
@@ -414,7 +414,7 @@ func readEachWithoutHeaders(decoder SimpleDecoder, c interface{}) error {
 	return nil
 }
 
-func readToWithoutHeaders(decoder Decoder, out interface{}) error {
+func readToWithoutHeaders(decoder Decoder, out any) error {
 	outValue, outType := getConcreteReflectValueAndType(out) // Get the concrete type (not pointer) (Slice<?> or Array<?>)
 	if err := ensureOutType(outType); err != nil {
 		return err
@@ -472,7 +472,7 @@ func ensureOutType(outType reflect.Type) error {
 	case reflect.Array:
 		return nil
 	}
-	return fmt.Errorf("cannot use " + outType.String() + ", only slice or array supported")
+	return fmt.Errorf("cannot use %s, only slice or array supported", outType.String())
 }
 
 // Check if the outInnerType is of type struct
@@ -481,7 +481,7 @@ func ensureOutInnerType(outInnerType reflect.Type) error {
 	case reflect.Struct:
 		return nil
 	}
-	return fmt.Errorf("cannot use " + outInnerType.String() + ", only struct supported")
+	return fmt.Errorf("cannot use %s, only struct supported", outInnerType.String())
 }
 
 func ensureOutCapacity(out *reflect.Value, csvLen int) error {
@@ -536,13 +536,7 @@ func setInnerField(outInner *reflect.Value, outInnerWasPointer bool, index []int
 
 		// grow slice when needed
 		if i >= oi.Cap() {
-			newcap := oi.Cap() + oi.Cap()/2
-			if newcap < 4 {
-				newcap = 4
-			}
-			if newcap < i+1 {
-				newcap = i + 1
-			}
+			newcap := max(max(oi.Cap()+oi.Cap()/2, 4), i+1)
 			newoi := reflect.MakeSlice(oi.Type(), oi.Len(), newcap)
 			reflect.Copy(newoi, oi)
 			oi.Set(newoi)
@@ -561,7 +555,7 @@ func setInnerField(outInner *reflect.Value, outInnerWasPointer bool, index []int
 	// because pointers can be nil need to recurse one index at a time and perform nil check
 	if len(index) > 1 {
 		nextField := oi.Field(index[0])
-		return setInnerField(&nextField, nextField.Kind() == reflect.Ptr, index[1:], value, omitEmpty)
+		return setInnerField(&nextField, nextField.Kind() == reflect.Pointer, index[1:], value, omitEmpty)
 	}
 	return setField(oi.FieldByIndex(index), value, omitEmpty)
 }

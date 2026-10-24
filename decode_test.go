@@ -59,7 +59,6 @@ e,BAD_INPUT,b`)
 	default:
 		t.Fatalf("incorrect error type: %T", err)
 	}
-
 }
 
 func Test_readToNormalized(t *testing.T) {
@@ -114,7 +113,6 @@ e,BAD_INPUT,b`)
 	default:
 		t.Fatalf("incorrect error type: %T", err)
 	}
-
 }
 
 func Test_readTo_Time(t *testing.T) {
@@ -150,30 +148,22 @@ ff,gg,22,hh,ii,jj`)
 		t.Fatalf("expected 2 sample instances, got %d", len(samples))
 	}
 	expected := SkipFieldSample{
-		EmbedSample: EmbedSample{
-			Qux: "aa",
-			Sample: Sample{
-				Foo: "bb",
-				Bar: 11,
-				Baz: "cc",
-			},
-			Quux: "dd",
-		},
+		Qux:   "aa",
+		Foo:   "bb",
+		Bar:   11,
+		Baz:   "cc",
+		Quux:  "dd",
 		Corge: "ee",
 	}
 	if expected != samples[0] {
 		t.Fatalf("expected first sample %v, got %v", expected, samples[0])
 	}
 	expected = SkipFieldSample{
-		EmbedSample: EmbedSample{
-			Qux: "ff",
-			Sample: Sample{
-				Foo: "gg",
-				Bar: 22,
-				Baz: "hh",
-			},
-			Quux: "ii",
-		},
+		Qux:   "ff",
+		Foo:   "gg",
+		Bar:   22,
+		Baz:   "hh",
+		Quux:  "ii",
 		Corge: "jj",
 	}
 	if expected != samples[1] {
@@ -188,7 +178,7 @@ ff,gg,22,hh,ii,jj`)
 	d := newSimpleDecoderFromReader(b)
 	var rows []EmbedPtrSample
 	if err := readTo(d, &rows); err != nil {
-		t.Fatalf(err.Error())
+		t.Fatalf("failed to readTo %v", err)
 	}
 	expected := EmbedPtrSample{
 		Qux: "ff",
@@ -315,7 +305,7 @@ bar`)
 	d := newSimpleDecoderFromReader(b)
 	var rows []EmbedMarshal
 	if err := readTo(d, &rows); err != nil {
-		t.Fatalf(err.Error())
+		t.Fatalf("failed to readTo %v", err)
 	}
 	expected := EmbedMarshal{
 		Foo: &MarshalSample{Dummy: "bar"},
@@ -331,7 +321,7 @@ test,1656460798.693201614`)
 	d := newSimpleDecoderFromReader(b)
 	var rows []EmbedUnmarshalCSVWithClashingField
 	if err := readTo(d, &rows); err != nil {
-		t.Fatalf(err.Error())
+		t.Fatalf("failed to readTo %v", err)
 	}
 	expected := EmbedUnmarshalCSVWithClashingField{
 		Symbol:    "test",
@@ -373,30 +363,22 @@ L:
 		t.Fatalf("expected 2 sample instances, got %d", len(samples))
 	}
 	expected := SkipFieldSample{
-		EmbedSample: EmbedSample{
-			Qux: "aa",
-			Sample: Sample{
-				Foo: "bb",
-				Bar: 11,
-				Baz: "cc",
-			},
-			Quux: "dd",
-		},
+		Qux:   "aa",
+		Foo:   "bb",
+		Bar:   11,
+		Baz:   "cc",
+		Quux:  "dd",
 		Corge: "ee",
 	}
 	if expected != samples[0] {
 		t.Fatalf("expected first sample %v, got %v", expected, samples[0])
 	}
 	expected = SkipFieldSample{
-		EmbedSample: EmbedSample{
-			Qux: "ff",
-			Sample: Sample{
-				Foo: "gg",
-				Bar: 22,
-				Baz: "hh",
-			},
-			Quux: "ii",
-		},
+		Qux:   "ff",
+		Foo:   "gg",
+		Bar:   22,
+		Baz:   "hh",
+		Quux:  "ii",
 		Corge: "jj",
 	}
 	if expected != samples[1] {
@@ -412,8 +394,7 @@ kk,ll,ab,mm,nn,oo
 `)
 	d := newSimpleDecoderFromReader(b)
 
-	var errHandler ErrorHandler
-	errHandler = func(parseError *csv.ParseError) bool {
+	var errHandler ErrorHandler = func(parseError *csv.ParseError) bool {
 		if parseError.Line != 4 {
 			t.Fatalf("expected parse error on line 4, got %d", parseError.Line)
 		}
@@ -449,30 +430,22 @@ L:
 		t.Fatalf("expected 2 sample instances, got %d", len(samples))
 	}
 	expected := SkipFieldSample{
-		EmbedSample: EmbedSample{
-			Qux: "aa",
-			Sample: Sample{
-				Foo: "bb",
-				Bar: 11,
-				Baz: "cc",
-			},
-			Quux: "dd",
-		},
+		Qux:   "aa",
+		Foo:   "bb",
+		Bar:   11,
+		Baz:   "cc",
+		Quux:  "dd",
 		Corge: "ee",
 	}
 	if expected != samples[0] {
 		t.Fatalf("expected first sample %v, got %v", expected, samples[0])
 	}
 	expected = SkipFieldSample{
-		EmbedSample: EmbedSample{
-			Qux: "ff",
-			Sample: Sample{
-				Foo: "gg",
-				Bar: 22,
-				Baz: "hh",
-			},
-			Quux: "ii",
-		},
+		Qux:   "ff",
+		Foo:   "gg",
+		Bar:   22,
+		Baz:   "hh",
+		Quux:  "ii",
 		Corge: "jj",
 	}
 	if expected != samples[1] {
@@ -732,30 +705,22 @@ ff,gg,22,hh,ii,jj`)
 		t.Fatalf("expected 2 sample instances, got %d", len(samples))
 	}
 	expected := SkipFieldSample{
-		EmbedSample: EmbedSample{
-			Qux: "aa",
-			Sample: Sample{
-				Foo: "bb",
-				Bar: 11,
-				Baz: "cc",
-			},
-			Quux: "dd",
-		},
+		Qux:   "aa",
+		Foo:   "bb",
+		Bar:   11,
+		Baz:   "cc",
+		Quux:  "dd",
 		Corge: "ee",
 	}
 	if expected != samples[0] {
 		t.Fatalf("expected first sample %v, got %v", expected, samples[0])
 	}
 	expected = SkipFieldSample{
-		EmbedSample: EmbedSample{
-			Qux: "ff",
-			Sample: Sample{
-				Foo: "gg",
-				Bar: 22,
-				Baz: "hh",
-			},
-			Quux: "ii",
-		},
+		Qux:   "ff",
+		Foo:   "gg",
+		Bar:   22,
+		Baz:   "hh",
+		Quux:  "ii",
 		Corge: "jj",
 	}
 	if expected != samples[1] {
@@ -810,7 +775,7 @@ func (rf *RenamedFloat64Unmarshaler) UnmarshalCSV(csv string) (err error) {
 	}
 
 	// Convert , to . before parsing to create valid float strings
-	converted := strings.Replace(csv, ",", ".", -1)
+	converted := strings.ReplaceAll(csv, ",", ".")
 	var f float64
 	if f, err = strconv.ParseFloat(converted, 64); err != nil {
 		return err
@@ -872,7 +837,6 @@ baz,2,zap,4.00`)
 			if samples[tt.index].Frop != tt.wantFrop {
 				t.Fatalf("UnmarshalCSVWithFields() Index %d Frop expected %v got %v", tt.index, tt.wantFrop, samples[tt.index].Frop)
 			}
-
 		})
 	}
 }
@@ -1083,7 +1047,8 @@ func TestCSVToMaps(t *testing.T) {
 	data := []item{
 		{
 			setupReader: func() {},
-			csv: bytes.NewBufferString(`foo,BAR,Baz
+			csv: bytes.NewBufferString(
+				`foo,BAR,Baz
 4,Jose,42
 2,Daniel,21
 5,Vincent,84`,
@@ -1100,11 +1065,12 @@ func TestCSVToMaps(t *testing.T) {
 					return r
 				})
 			},
-			csv: bytes.NewBufferString((`,,
+			csv: bytes.NewBufferString(
+				`,,
 foo,BAR,Baz
 4,Jose,42
 2,Daniel,21
-5,Vincent,84`),
+5,Vincent,84`,
 			),
 		},
 	}
@@ -1264,8 +1230,8 @@ func TestUnmarshalToChanWithoutHeadersColumns(t *testing.T) {
 	tests := []struct {
 		name    string
 		input   string
-		channel interface{}
-		want    interface{}
+		channel any
+		want    any
 	}{
 		{
 			name:    "value records with extra columns",
@@ -1476,7 +1442,7 @@ func BenchmarkCSVToMap(b *testing.B) {
 4,Jose
 2,Daniel
 5,Vincent`)
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		_, err := CSVToMap(bytes.NewReader(bufstring.Bytes()))
 		if err != nil {
 			b.Fatal(err)
@@ -1489,7 +1455,7 @@ func BenchmarkUnmarshalCSVToMap(b *testing.B) {
 4,Jose
 2,Daniel
 5,Vincent`)
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		var sample map[string]string
 		r := bytes.NewReader(bufstring)
 		d := csv.NewReader(r)

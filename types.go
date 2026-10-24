@@ -2,22 +2,21 @@ package gocsv
 
 import (
 	"encoding"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"strconv"
 	"strings"
-
-	"encoding/json"
 )
 
 // --------------------------------------------------------------------------
 // Conversion interfaces
 
 var (
-	marshalerType              = reflect.TypeOf(new(TypeMarshaller)).Elem()
-	textMarshalerType          = reflect.TypeOf(new(encoding.TextMarshaler)).Elem()
-	unmarshalerType            = reflect.TypeOf(new(TypeUnmarshaller)).Elem()
-	unmarshalCSVWithFieldsType = reflect.TypeOf(new(TypeUnmarshalCSVWithFields)).Elem()
+	marshalerType              = reflect.TypeFor[TypeMarshaller]()
+	textMarshalerType          = reflect.TypeFor[encoding.TextMarshaler]()
+	unmarshalerType            = reflect.TypeFor[TypeUnmarshaller]()
+	unmarshalCSVWithFieldsType = reflect.TypeFor[TypeUnmarshalCSVWithFields]()
 )
 
 // TypeMarshaller is implemented by any value that has a MarshalCSV method
@@ -43,7 +42,7 @@ type NoUnmarshalFuncError struct {
 }
 
 func (e NoUnmarshalFuncError) Error() string {
-	return "No known conversion from string to " + e.t.Name() + ", it does not implement TypeUnmarshaller"
+	return fmt.Sprintf("no known conversion from string to %s, it does not implement TypeUnmarshaller", e.t.String())
 }
 
 // NoMarshalFuncError is the custom error type to be raised in case there is no marshal function defined on type
@@ -52,13 +51,14 @@ type NoMarshalFuncError struct {
 }
 
 func (e NoMarshalFuncError) Error() string {
-	return "No known conversion from " + e.ty.String() + " to string, " + e.ty.String() + " does not implement TypeMarshaller nor Stringer"
+	v := e.ty.String()
+	return fmt.Sprintf("no known conversion from %s to string, %s does not implement TypeMarshaller nor Stringer", v, v)
 }
 
 // --------------------------------------------------------------------------
 // Conversion helpers
 
-func toString(in interface{}) (string, error) {
+func toString(in any) (string, error) {
 	inValue := reflect.ValueOf(in)
 
 	switch inValue.Kind() {
@@ -79,10 +79,10 @@ func toString(in interface{}) (string, error) {
 	case reflect.Float64:
 		return strconv.FormatFloat(inValue.Float(), byte('f'), -1, 64), nil
 	}
-	return "", fmt.Errorf("No known conversion from " + inValue.Type().String() + " to string")
+	return "", fmt.Errorf("no known conversion from %s to string", inValue.Type().String())
 }
 
-func toBool(in interface{}) (bool, error) {
+func toBool(in any) (bool, error) {
 	inValue := reflect.ValueOf(in)
 
 	switch inValue.Kind() {
@@ -117,10 +117,10 @@ func toBool(in interface{}) (bool, error) {
 		}
 		return false, nil
 	}
-	return false, fmt.Errorf("No known conversion from " + inValue.Type().String() + " to bool")
+	return false, fmt.Errorf("no known conversion from %s to float32/float64", inValue.Type().String())
 }
 
-func toInt(in interface{}) (int64, error) {
+func toInt(in any) (int64, error) {
 	inValue := reflect.ValueOf(in)
 
 	switch inValue.Kind() {
@@ -144,10 +144,10 @@ func toInt(in interface{}) (int64, error) {
 	case reflect.Float32, reflect.Float64:
 		return int64(inValue.Float()), nil
 	}
-	return 0, fmt.Errorf("No known conversion from " + inValue.Type().String() + " to int")
+	return 0, fmt.Errorf("no known conversion from %s to int", inValue.Type().String())
 }
 
-func toUint(in interface{}) (uint64, error) {
+func toUint(in any) (uint64, error) {
 	inValue := reflect.ValueOf(in)
 
 	switch inValue.Kind() {
@@ -179,10 +179,10 @@ func toUint(in interface{}) (uint64, error) {
 	case reflect.Float32, reflect.Float64:
 		return uint64(inValue.Float()), nil
 	}
-	return 0, fmt.Errorf("No known conversion from " + inValue.Type().String() + " to uint")
+	return 0, fmt.Errorf("no known conversion from %s to uint", inValue.Type().String())
 }
 
-func toFloat(in interface{}) (float64, error) {
+func toFloat(in any) (float64, error) {
 	inValue := reflect.ValueOf(in)
 
 	switch inValue.Kind() {
@@ -191,7 +191,7 @@ func toFloat(in interface{}) (float64, error) {
 		if s == "" {
 			return 0, nil
 		}
-		s = strings.Replace(s, ",", ".", -1)
+		s = strings.ReplaceAll(s, ",", ".")
 		return strconv.ParseFloat(s, 64)
 	case reflect.Bool:
 		if inValue.Bool() {
@@ -205,11 +205,11 @@ func toFloat(in interface{}) (float64, error) {
 	case reflect.Float32, reflect.Float64:
 		return inValue.Float(), nil
 	}
-	return 0, fmt.Errorf("No known conversion from " + inValue.Type().String() + " to float")
+	return 0, fmt.Errorf("no known conversion from %s to float", inValue.Type().String())
 }
 
 func setField(field reflect.Value, value string, omitEmpty bool) error {
-	if field.Kind() == reflect.Ptr {
+	if field.Kind() == reflect.Pointer {
 		if omitEmpty && value == "" {
 			return nil
 		}
@@ -331,7 +331,7 @@ func setField(field reflect.Value, value string, omitEmpty bool) error {
 
 func getFieldAsString(field reflect.Value) (str string, err error) {
 	switch field.Kind() {
-	case reflect.Interface, reflect.Ptr:
+	case reflect.Interface, reflect.Pointer:
 		if field.IsNil() {
 			return "", nil
 		}
@@ -432,7 +432,7 @@ func canMarshal(t reflect.Type) bool {
 	}
 
 	// Pointer to a struct that implements any of the text or CSV marshaling interfaces
-	t = reflect.PtrTo(t)
+	t = reflect.PointerTo(t)
 	if t.Implements(marshalerType) ||
 		t.Implements(textMarshalerType) ||
 		t.Implements(unmarshalerType) ||
@@ -462,7 +462,7 @@ func unmarshall(field reflect.Value, value string) error {
 
 		return NoUnmarshalFuncError{field.Type()}
 	}
-	for dupField.Kind() == reflect.Interface || dupField.Kind() == reflect.Ptr {
+	for dupField.Kind() == reflect.Interface || dupField.Kind() == reflect.Pointer {
 		if dupField.IsNil() {
 			dupField = reflect.New(field.Type().Elem())
 			field.Set(dupField)
@@ -504,7 +504,7 @@ func marshall(field reflect.Value) (value string, err error) {
 
 		return value, NoMarshalFuncError{field.Type()}
 	}
-	for dupField.Kind() == reflect.Interface || dupField.Kind() == reflect.Ptr {
+	for dupField.Kind() == reflect.Interface || dupField.Kind() == reflect.Pointer {
 		if dupField.IsNil() {
 			return value, nil
 		}

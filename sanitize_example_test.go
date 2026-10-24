@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gocarina/gocsv"
+	"github.com/marcsantiago/gocsv"
 )
 
 // heightDecoder normalizes only Height values after CSV parsing. Keeping the

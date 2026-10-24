@@ -1,3 +1,3 @@
-module github.com/gocarina/gocsv
+module github.com/marcsantiago/gocsv
 
-go 1.13
+go 1.27.0

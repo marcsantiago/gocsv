@@ -9,20 +9,20 @@ import (
 
 func TestUnmarshalToCallback_ReaderError(t *testing.T) {
 	type Dummy struct{}
-	var reader = &errorReader{}
+	reader := &errorReader{}
 
 	err := UnmarshalToCallback(reader, func(Dummy) {})
-	if !errors.Is(err, readerErr) {
+	if !errors.Is(err, errReader) {
 		t.Error("UnmarshalToCallback should return first reader error")
 	}
 
 	err = UnmarshalDecoderToCallback(newSimpleDecoderFromReader(reader), func(Dummy) {})
-	if !errors.Is(err, readerErr) {
+	if !errors.Is(err, errReader) {
 		t.Error("UnmarshalDecoderToCallback should return first reader error")
 	}
 
 	err = UnmarshalToCallbackWithError(reader, func(Dummy) error { return nil })
-	if !errors.Is(err, readerErr) {
+	if !errors.Is(err, errReader) {
 		t.Error("UnmarshalToCallbackWithError should return first reader error")
 	}
 }
@@ -36,7 +36,7 @@ func TestSetHeaderNormalizerWhileUnmarshaling(t *testing.T) {
 	}
 
 	var wg sync.WaitGroup
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
@@ -60,7 +60,7 @@ func TestSetHeaderNormalizerWhileUnmarshaling(t *testing.T) {
 type errorReader struct{}
 
 func (e *errorReader) Read([]byte) (n int, err error) {
-	return 0, readerErr
+	return 0, errReader
 }
 
-var readerErr = errors.New("reader error")
+var errReader = errors.New("reader error")
