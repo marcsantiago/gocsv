@@ -1,6 +1,9 @@
 package gocsv
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 type Sample struct {
 	Foo  string  `csv:"foo"`
@@ -14,6 +17,23 @@ type Sample struct {
 
 type SliceSample struct {
 	Slice []int `csv:"Slice"`
+}
+
+type ArraySample struct {
+	Name  string `csv:"Name"`
+	Array [3]int `csv:"Array"`
+}
+
+type SliceStructSample struct {
+	Slice       []SliceStruct  `csv:"s,slice" csv[]:"2"`
+	Slice2      []SliceStruct  `csv:"sliceText"`
+	SimpleSlice []int          `csv:"ints" csv[]:"3"`
+	Array       [2]SliceStruct `csv:"a,array" csv[]:"2"`
+}
+
+type SliceStruct struct {
+	String string  `csv:"s,string"`
+	Float  float64 `csv:"f,float"`
 }
 
 type EmbedSample struct {
@@ -38,6 +58,45 @@ func (m *MarshalSample) UnmarshalText(text []byte) error {
 
 type EmbedMarshal struct {
 	Foo *MarshalSample `csv:"foo"`
+}
+
+type MarshalCSVSample struct {
+	Seconds int64
+	Nanos   int32
+}
+
+func (timestamp *MarshalCSVSample) MarshalCSV() (string, error) {
+	if timestamp == nil {
+		return "", nil
+	}
+
+	return fmt.Sprintf("%d.%09d", timestamp.Seconds, timestamp.Nanos), nil
+}
+
+type EmbedMarshalCSV struct {
+	Symbol    string            `csv:"symbol"`
+	Timestamp *MarshalCSVSample `csv:"timestamp"`
+}
+
+type UnmarshalCSVSample struct {
+	Timestamp int64
+	Nanos     int32
+}
+
+func (timestamp *UnmarshalCSVSample) UnmarshalCSV(s string) error {
+	ret := UnmarshalCSVSample{}
+	_, err := fmt.Sscanf(s, "%d.%09d", &ret.Timestamp, &ret.Nanos)
+	*timestamp = ret
+	return err
+}
+
+type EmbedUnmarshalCSVWithClashingField struct {
+	Symbol string
+
+	// Clashes on purpose with UnmarshalCSVSample's Timestamp field. Since
+	// *UnmarshalCSVSample implements UnmarshalCSV(), that method call should
+	// take precedence.
+	Timestamp *UnmarshalCSVSample
 }
 
 type EmbedPtrSample struct {
@@ -83,11 +142,11 @@ type DateTime struct {
 }
 
 type Level0Struct struct {
-	Level0Field level1Struct `csv:"-"`
+	Level0Field level1Struct
 }
 
 type level1Struct struct {
-	Level1Field level2Struct `csv:"-"`
+	Level1Field level2Struct
 }
 
 type level2Struct struct {
@@ -100,6 +159,22 @@ type InnerStruct struct {
 	StringField2     string `csv:"stringField2"`
 }
 
+type InnerStruct3 struct {
+	Bar string
+	Foo time.Time
+}
+
+type InnerStruct2 struct {
+	Bar    string
+	Inner3 InnerStruct3
+}
+
+type SameNameStruct struct {
+	Inner2 *InnerStruct2
+	Inner3 InnerStruct3
+	Foo    time.Time
+}
+
 var _ TypeUnmarshalCSVWithFields = (*UnmarshalCSVWithFieldsSample)(nil)
 
 type UnmarshalCSVWithFieldsSample struct {
@@ -108,3 +183,39 @@ type UnmarshalCSVWithFieldsSample struct {
 	Baz  string  `csv:"baz"`
 	Frop float64 `csv:"frop"`
 }
+
+type NestedSample struct {
+	Inner1      InnerStruct       `csv:"one"`
+	Inner2      InnerStruct       `csv:"two"`
+	InnerIgnore InnerStruct       `csv:"-"`
+	Inner3      NestedEmbedSample `csv:"three"`
+}
+type NestedEmbedSample struct {
+	InnerStruct
+}
+
+type InlineBar struct {
+	A int `csv:"a"`
+	B int `csv:"b"`
+}
+
+type InlineFooSample struct {
+	Bar InlineBar `csv:"."`
+	X   int       `csv:"x"`
+}
+
+type InlineFooPtrSample struct {
+	Bar *InlineBar `csv:"."`
+	X   int        `csv:"x"`
+}
+
+type InlineOuterSample struct {
+	Foo InlineFooSample `csv:"foo"`
+	Y   int             `csv:"y"`
+}
+
+type NoTagsSample struct {
+	Fields map[string]string
+}
+
+var _ TypeUnmarshalCSVWithFields = (*NoTagsSample)(nil)

@@ -1,9 +1,14 @@
 package gocsv
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"reflect"
+)
+
+var (
+	ErrChannelIsClosed = errors.New("channel is closed")
 )
 
 type encoder struct {
@@ -14,11 +19,11 @@ func newEncoder(out io.Writer) *encoder {
 	return &encoder{out}
 }
 
-func writeFromChan(writer *SafeCSVWriter, c <-chan interface{}) error {
+func writeFromChan(writer CSVWriter, c <-chan interface{}, omitHeaders bool) error {
 	// Get the first value. It wil determine the header structure.
 	firstValue, ok := <-c
 	if !ok {
-		return fmt.Errorf("channel is closed")
+		return ErrChannelIsClosed
 	}
 	inValue, inType := getConcreteReflectValueAndType(firstValue) // Get the concrete type
 	if err := ensureStructOrPtr(inType); err != nil {
@@ -26,12 +31,17 @@ func writeFromChan(writer *SafeCSVWriter, c <-chan interface{}) error {
 	}
 	inInnerWasPointer := inType.Kind() == reflect.Ptr
 	inInnerStructInfo := getStructInfo(inType) // Get the inner struct info to get CSV annotations
+	if inInnerStructInfo.Err != nil {
+		return inInnerStructInfo.Err
+	}
 	csvHeadersLabels := make([]string, len(inInnerStructInfo.Fields))
 	for i, fieldInfo := range inInnerStructInfo.Fields { // Used to write the header (first line) in CSV
 		csvHeadersLabels[i] = fieldInfo.getFirstKey()
 	}
-	if err := writer.Write(csvHeadersLabels); err != nil {
-		return err
+	if !omitHeaders {
+		if err := writer.Write(csvHeadersLabels); err != nil {
+			return err
+		}
 	}
 	write := func(val reflect.Value) error {
 		for j, fieldInfo := range inInnerStructInfo.Fields {
@@ -63,7 +73,7 @@ func writeFromChan(writer *SafeCSVWriter, c <-chan interface{}) error {
 	return writer.Error()
 }
 
-func writeTo(writer *SafeCSVWriter, in interface{}, omitHeaders bool) error {
+func writeTo(writer CSVWriter, in interface{}, omitHeaders bool) error {
 	inValue, inType := getConcreteReflectValueAndType(in) // Get the concrete type (not pointer) (Slice<?> or Array<?>)
 	if err := ensureInType(inType); err != nil {
 		return err
@@ -73,6 +83,9 @@ func writeTo(writer *SafeCSVWriter, in interface{}, omitHeaders bool) error {
 		return err
 	}
 	inInnerStructInfo := getStructInfo(inInnerType) // Get the inner struct info to get CSV annotations
+	if inInnerStructInfo.Err != nil {
+		return inInnerStructInfo.Err
+	}
 	csvHeadersLabels := make([]string, len(inInnerStructInfo.Fields))
 	for i, fieldInfo := range inInnerStructInfo.Fields { // Used to write the header (first line) in CSV
 		csvHeadersLabels[i] = fieldInfo.getFirstKey()
@@ -138,6 +151,21 @@ func getInnerField(outInner reflect.Value, outInnerWasPointer bool, index []int)
 		}
 		oi = outInner.Elem()
 	}
+
+	if oi.Kind() == reflect.Slice || oi.Kind() == reflect.Array {
+		i := index[0]
+
+		if i >= oi.Len() {
+			return "", nil
+		}
+
+		item := oi.Index(i)
+		if len(index) > 1 {
+			return getInnerField(item, false, index[1:])
+		}
+		return getFieldAsString(item)
+	}
+
 	// because pointers can be nil need to recurse one index at a time and perform nil check
 	if len(index) > 1 {
 		nextField := oi.Field(index[0])

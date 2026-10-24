@@ -3,6 +3,7 @@ package gocsv
 import (
 	"bytes"
 	"encoding/csv"
+	"errors"
 	"io"
 	"reflect"
 	"strconv"
@@ -224,6 +225,90 @@ func Test_readTo_slice(t *testing.T) {
 	}
 }
 
+func Test_readTo_array(t *testing.T) {
+	b := bytes.NewBufferString(`Name,Array
+empty,
+short,"[1, 2]"
+full,"[1, 2, 3]"`)
+	d := newSimpleDecoderFromReader(b)
+	samples := []ArraySample{}
+	if err := readTo(d, &samples); err != nil {
+		t.Fatal(err)
+	}
+	expected := []ArraySample{
+		{Name: "empty", Array: [3]int{}},
+		{Name: "short", Array: [3]int{1, 2}},
+		{Name: "full", Array: [3]int{1, 2, 3}},
+	}
+	if !reflect.DeepEqual(expected, samples) {
+		t.Fatalf("expected %v, got %v", expected, samples)
+	}
+}
+
+func Test_array_round_trip(t *testing.T) {
+	in := []ArraySample{{Name: "full", Array: [3]int{1, 2, 3}}}
+	out, err := MarshalString(&in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back []ArraySample
+	if err := UnmarshalString(out, &back); err != nil {
+		t.Fatalf("cannot unmarshal %q produced by MarshalString: %v", out, err)
+	}
+	if !reflect.DeepEqual(in, back) {
+		t.Fatalf("expected %v, got %v", in, back)
+	}
+}
+
+func Test_readTo_slice_structs(t *testing.T) {
+	b := bytes.NewBufferString(`s[0].string,slice[0].f,slice[1].s,s[1].float,a[0].s,array[0].float,a[1].s,array[1].float,ints[0],ints[1],ints[2]
+s1,1.1,s2,2.2,s3,3.3,s4,4.4,1,2,3`)
+	d := newSimpleDecoderFromReader(b)
+
+	var samples []SliceStructSample
+	err := readTo(d, &samples)
+	if err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	expected := SliceStructSample{
+		Slice: []SliceStruct{
+			{String: "s1", Float: 1.1},
+			{String: "s2", Float: 2.2},
+		},
+		SimpleSlice: []int{1, 2, 3},
+		Array: [2]SliceStruct{
+			{String: "s3", Float: 3.3},
+			{String: "s4", Float: 4.4},
+		},
+	}
+
+	if !reflect.DeepEqual(expected, samples[0]) {
+		t.Fatalf("expected \n  sample: %v\n     got: %v", expected, samples[0])
+	}
+}
+
+func TestUnmarshalSliceColumnsOutOfOrder(t *testing.T) {
+	type row struct {
+		ID int   `csv:"id"`
+		V  []int `csv:"v" csv[]:"6"`
+	}
+
+	for _, input := range []string{
+		"id,v[0],v[5]\n1,0,5\n",
+		"id,v[5],v[0]\n1,5,0\n",
+	} {
+		var rows []row
+		if err := UnmarshalString(input, &rows); err != nil {
+			t.Fatalf("UnmarshalString(%q): %v", input, err)
+		}
+		want := []row{{ID: 1, V: []int{0, 0, 0, 0, 0, 5}}}
+		if !reflect.DeepEqual(rows, want) {
+			t.Errorf("UnmarshalString(%q) = %v, want %v", input, rows, want)
+		}
+	}
+}
+
 func Test_readTo_embed_marshal(t *testing.T) {
 	b := bytes.NewBufferString(`foo
 bar`)
@@ -240,6 +325,23 @@ bar`)
 	}
 }
 
+func Test_readTo_embed_unmarshal_csv_with_clashing_field(t *testing.T) {
+	b := bytes.NewBufferString(`Symbol,Timestamp
+test,1656460798.693201614`)
+	d := newSimpleDecoderFromReader(b)
+	var rows []EmbedUnmarshalCSVWithClashingField
+	if err := readTo(d, &rows); err != nil {
+		t.Fatalf(err.Error())
+	}
+	expected := EmbedUnmarshalCSVWithClashingField{
+		Symbol:    "test",
+		Timestamp: &UnmarshalCSVSample{Timestamp: 1656460798, Nanos: 693201614},
+	}
+	if !reflect.DeepEqual(expected, rows[0]) {
+		t.Fatalf("expected first sample %v, got %+v", expected, rows[0])
+	}
+}
+
 func Test_readEach(t *testing.T) {
 	b := bytes.NewBufferString(`first,foo,BAR,Baz,last,abc
 aa,bb,11,cc,dd,ee
@@ -247,14 +349,101 @@ ff,gg,22,hh,ii,jj`)
 	d := newSimpleDecoderFromReader(b)
 
 	c := make(chan SkipFieldSample)
+	e := make(chan error)
 	var samples []SkipFieldSample
 	go func() {
-		if err := readEach(d, c); err != nil {
-			t.Fatal(err)
+		if err := readEach(d, nil, c); err != nil {
+			e <- err
 		}
 	}()
-	for v := range c {
-		samples = append(samples, v)
+L:
+	for {
+		select {
+		case err := <-e:
+			t.Fatal(err)
+		case v, ok := <-c:
+			if !ok {
+				break L
+			}
+			samples = append(samples, v)
+
+		}
+	}
+	if len(samples) != 2 {
+		t.Fatalf("expected 2 sample instances, got %d", len(samples))
+	}
+	expected := SkipFieldSample{
+		EmbedSample: EmbedSample{
+			Qux: "aa",
+			Sample: Sample{
+				Foo: "bb",
+				Bar: 11,
+				Baz: "cc",
+			},
+			Quux: "dd",
+		},
+		Corge: "ee",
+	}
+	if expected != samples[0] {
+		t.Fatalf("expected first sample %v, got %v", expected, samples[0])
+	}
+	expected = SkipFieldSample{
+		EmbedSample: EmbedSample{
+			Qux: "ff",
+			Sample: Sample{
+				Foo: "gg",
+				Bar: 22,
+				Baz: "hh",
+			},
+			Quux: "ii",
+		},
+		Corge: "jj",
+	}
+	if expected != samples[1] {
+		t.Fatalf("expected first sample %v, got %v", expected, samples[1])
+	}
+}
+
+func Test_readEach_withErrorHandler(t *testing.T) {
+	b := bytes.NewBufferString(`first,foo,BAR,Baz,last,abc
+aa,bb,11,cc,dd,ee
+ff,gg,22,hh,ii,jj
+kk,ll,ab,mm,nn,oo
+`)
+	d := newSimpleDecoderFromReader(b)
+
+	var errHandler ErrorHandler
+	errHandler = func(parseError *csv.ParseError) bool {
+		if parseError.Line != 4 {
+			t.Fatalf("expected parse error on line 4, got %d", parseError.Line)
+		}
+
+		if parseError.Column != 3 {
+			t.Fatalf("expected parse error on column 3, got %d", parseError.Column)
+		}
+		return false
+	}
+
+	c := make(chan SkipFieldSample)
+	e := make(chan error)
+	var samples []SkipFieldSample
+	go func() {
+		if err := readEach(d, errHandler, c); err != nil {
+			e <- err
+		}
+	}()
+L:
+	for {
+		select {
+		case err := <-e:
+			t.Fatal(err)
+		case v, ok := <-c:
+			if !ok {
+				break L
+			}
+			samples = append(samples, v)
+
+		}
 	}
 	if len(samples) != 2 {
 		t.Fatalf("expected 2 sample instances, got %d", len(samples))
@@ -299,14 +488,25 @@ e,3,b,,,,`)
 	d := newSimpleDecoderFromReader(b)
 
 	c := make(chan Sample)
+	e := make(chan error)
 	var samples []Sample
 	go func() {
 		if err := readEachWithoutHeaders(d, c); err != nil {
-			t.Fatal(err)
+			e <- err
 		}
 	}()
-	for v := range c {
-		samples = append(samples, v)
+L:
+	for {
+		select {
+		case err := <-e:
+			t.Fatal(err)
+		case v, ok := <-c:
+			if !ok {
+				break L
+			}
+			samples = append(samples, v)
+
+		}
 	}
 	if len(samples) != 2 {
 		t.Fatalf("expected 2 sample instances, got %d", len(samples))
@@ -320,6 +520,57 @@ e,3,b,,,,`)
 	expected = Sample{Foo: "e", Bar: 3, Baz: "b", Frop: 0, Blah: &blah, SPtr: &sptr}
 	if !reflect.DeepEqual(expected, samples[1]) {
 		t.Fatalf("expected second sample %v, got %v", expected, samples[1])
+	}
+}
+
+// Test_readEach_TypeUnmarshalCSVWithFields test that readEach works with type implementing TypeUnmarshalCSVWithFields for unmarshalling
+func Test_readEach_TypeUnmarshalCSVWithFields(t *testing.T) {
+	b := bytes.NewBufferString(`foo,bar,baz,frop
+bb,1,cc,3.14
+gg,2,hh,4`)
+	d := newSimpleDecoderFromReader(b)
+
+	c := make(chan UnmarshalCSVWithFieldsSample)
+	e := make(chan error)
+	var samples []UnmarshalCSVWithFieldsSample
+	go func() {
+		if err := readEach(d, nil, c); err != nil {
+			e <- err
+		}
+	}()
+L:
+	for {
+		select {
+		case err := <-e:
+			t.Fatal(err)
+		case v, ok := <-c:
+			if !ok {
+				break L
+			}
+			samples = append(samples, v)
+
+		}
+	}
+	if len(samples) != 2 {
+		t.Fatalf("expected 2 sample instances, got %d", len(samples))
+	}
+	expected := UnmarshalCSVWithFieldsSample{
+		Foo:  "bb",
+		Bar:  1,
+		Baz:  "cc",
+		Frop: 314,
+	}
+	if expected != samples[0] {
+		t.Fatalf("expected first sample %v, got %v", expected, samples[0])
+	}
+	expected = UnmarshalCSVWithFieldsSample{
+		Foo:  "gg",
+		Bar:  2,
+		Baz:  "hh",
+		Frop: 400,
+	}
+	if expected != samples[1] {
+		t.Fatalf("expected first sample %v, got %v", expected, samples[1])
 	}
 }
 
@@ -340,6 +591,8 @@ func Test_maybeMissingStructFields(t *testing.T) {
 	// bad headers, expect an error
 	if err := maybeMissingStructFields(structTags, badHeaders); err == nil {
 		t.Fatal("expected an error, but no error found")
+	} else if !errors.Is(err, ErrUnmatchedStructTags) {
+		t.Fatal("expected ErrUnmatchedStructTags, but got a different error")
 	}
 
 	// good headers, expect no error
@@ -358,6 +611,8 @@ func Test_maybeMissingStructFields(t *testing.T) {
 	mismatchedHeaders := []string{"foo", "qux", "quux", "corgi"}
 	if err := maybeMissingStructFields(structTags, mismatchedHeaders); err == nil {
 		t.Fatal("expected an error, but no error found")
+	} else if !errors.Is(err, ErrUnmatchedStructTags) {
+		t.Fatal("expected ErrUnmatchedStructTags, but got a different error")
 	}
 }
 
@@ -371,6 +626,8 @@ e,3,b`)
 	// *** check maybeDoubleHeaderNames
 	if err := maybeDoubleHeaderNames([]string{"foo", "BAR", "foo"}); err == nil {
 		t.Fatal("maybeDoubleHeaderNames did not raise an error when a should have.")
+	} else if !errors.Is(err, ErrDoubleHeaderNames) {
+		t.Fatal("maybeDoubleHeaderNames did not raise an error of type ErrDoubleHeaderNames.")
 	}
 
 	// *** check readTo
@@ -410,13 +667,24 @@ e,3,b`)
 	d = newSimpleDecoderFromReader(b)
 	samples = samples[:0]
 	c := make(chan Sample)
+	e := make(chan error)
 	go func() {
-		if err := readEach(d, c); err != nil {
-			t.Fatal(err)
+		if err := readEach(d, nil, c); err != nil {
+			e <- err
 		}
 	}()
-	for v := range c {
-		samples = append(samples, v)
+L1:
+	for {
+		select {
+		case err := <-e:
+			t.Fatal(err)
+		case v, ok := <-c:
+			if !ok {
+				break L1
+			}
+			samples = append(samples, v)
+
+		}
 	}
 	// Double header allowed, value should be of third row
 	if samples[0].Foo != "baz" {
@@ -429,13 +697,24 @@ f,1,baz
 e,3,b`)
 	d = newSimpleDecoderFromReader(b)
 	c = make(chan Sample)
+	e = make(chan error)
 	go func() {
-		if err := readEach(d, c); err == nil {
-			t.Fatal("Double header not allowed but no error raised. Function called is readEach.")
+		if err := readEach(d, nil, c); err == nil {
+			e <- err
 		}
 	}()
-	for v := range c {
-		samples = append(samples, v)
+L2:
+	for {
+		select {
+		case <-e:
+			t.Fatal("Double header not allowed but no error raised. Function called is readEach.")
+		case v, ok := <-c:
+			if !ok {
+				break L2
+			}
+			samples = append(samples, v)
+
+		}
 	}
 }
 
@@ -540,7 +819,7 @@ func (rf *RenamedFloat64Unmarshaler) UnmarshalCSV(csv string) (err error) {
 	return nil
 }
 
-// TestUnmarshalCSVWithFields test that the TestUnmarshalCSVWithFields interface to marshall all the fields works
+// TestUnmarshalCSVWithFields test that the TestUnmarshalCSVWithFields interface to unmarshal all the fields works
 func TestUnmarshalCSVWithFields(t *testing.T) {
 	b := []byte(`foo,bar,baz,frop
 bar,1,zip,3.14
@@ -626,6 +905,62 @@ type UnmarshalError struct {
 
 func (e UnmarshalError) Error() string {
 	return e.msg
+}
+
+// TestUnmarshalCSVWithFieldsNoTags test that the TypeUnmarshalCSVWithFields interface works for types without matching csv tags (or no csv tags at all)
+func TestUnmarshalCSVWithFieldsNoTags(t *testing.T) {
+	b := []byte(`foo,bar,baz,frop
+bar,1,zip,3.14
+baz,2,zap,4.00`)
+	var samples []NoTagsSample
+	err := UnmarshalBytes(b, &samples)
+	if err != nil {
+		t.Fatalf("UnmarshalCSVWithFields() -> UnmarshalBytes() %v", err)
+	}
+
+	if len(samples) != 2 {
+		t.Fatalf("expected 2 sample instances, got %d", len(samples))
+	}
+
+	if len(samples[0].Fields) != 4 {
+		t.Fatalf("expected 4 sample fields in map, got %d", len(samples[0].Fields))
+	}
+
+	checkFieldMap := func(expected map[string]string, actual map[string]string) {
+		for expectedKey, expectedValue := range expected {
+			if sampleValue, ok := actual[expectedKey]; ok {
+				if sampleValue != expectedValue {
+					t.Fatalf("expected %s key in map to have %s value, got %s", expectedKey, expectedValue, sampleValue)
+				}
+			} else {
+				t.Fatalf("expected map to have key %s", expectedKey)
+			}
+		}
+	}
+
+	expectedFields := map[string]string{
+		"foo":  "bar",
+		"bar":  "1",
+		"baz":  "zip",
+		"frop": "3.14",
+	}
+	checkFieldMap(expectedFields, samples[0].Fields)
+
+	expectedFields = map[string]string{
+		"foo":  "baz",
+		"bar":  "2",
+		"baz":  "zap",
+		"frop": "4.00",
+	}
+	checkFieldMap(expectedFields, samples[1].Fields)
+}
+
+func (u *NoTagsSample) UnmarshalCSVWithFields(key, value string) error {
+	if u.Fields == nil {
+		u.Fields = map[string]string{}
+	}
+	u.Fields[key] = value
+	return nil
 }
 
 func TestMultipleStructTags(t *testing.T) {
@@ -740,43 +1075,76 @@ e`)
 }
 
 func TestCSVToMaps(t *testing.T) {
-	b := bytes.NewBufferString(`foo,BAR,Baz
+	defer SetCSVReader(DefaultCSVReader)
+	type item struct {
+		setupReader func()
+		csv         *bytes.Buffer
+	}
+	data := []item{
+		{
+			setupReader: func() {},
+			csv: bytes.NewBufferString(`foo,BAR,Baz
 4,Jose,42
 2,Daniel,21
-5,Vincent,84`)
-	m, err := CSVToMaps(bytes.NewReader(b.Bytes()))
-	if err != nil {
-		t.Fatal(err)
+5,Vincent,84`,
+			),
+		},
+		{
+			setupReader: func() {
+				SetCSVReader(func(in io.Reader) CSVReader {
+					r := csv.NewReader(in)
+					_, err := r.Read()
+					if err != nil {
+						t.Fatal(err)
+					}
+					return r
+				})
+			},
+			csv: bytes.NewBufferString((`,,
+foo,BAR,Baz
+4,Jose,42
+2,Daniel,21
+5,Vincent,84`),
+			),
+		},
 	}
-	firstRecord := m[0]
-	if firstRecord["foo"] != "4" {
-		t.Fatal("Expected 4 got", firstRecord["foo"])
-	}
-	if firstRecord["BAR"] != "Jose" {
-		t.Fatal("Expected Jose got", firstRecord["BAR"])
-	}
-	if firstRecord["Baz"] != "42" {
-		t.Fatal("Expected 42 got", firstRecord["Baz"])
-	}
-	secondRecord := m[1]
-	if secondRecord["foo"] != "2" {
-		t.Fatal("Expected 2 got", secondRecord["foo"])
-	}
-	if secondRecord["BAR"] != "Daniel" {
-		t.Fatal("Expected Daniel got", secondRecord["BAR"])
-	}
-	if secondRecord["Baz"] != "21" {
-		t.Fatal("Expected 21 got", secondRecord["Baz"])
-	}
-	thirdRecord := m[2]
-	if thirdRecord["foo"] != "5" {
-		t.Fatal("Expected 5 got", thirdRecord["foo"])
-	}
-	if thirdRecord["BAR"] != "Vincent" {
-		t.Fatal("Expected Vincent got", thirdRecord["BAR"])
-	}
-	if thirdRecord["Baz"] != "84" {
-		t.Fatal("Expected 84 got", thirdRecord["Baz"])
+
+	for _, b := range data {
+		b.setupReader()
+		m, err := CSVToMaps(bytes.NewReader(b.csv.Bytes()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		firstRecord := m[0]
+		if firstRecord["foo"] != "4" {
+			t.Fatal("Expected 4 got", firstRecord["foo"])
+		}
+		if firstRecord["BAR"] != "Jose" {
+			t.Fatal("Expected Jose got", firstRecord["BAR"])
+		}
+		if firstRecord["Baz"] != "42" {
+			t.Fatal("Expected 42 got", firstRecord["Baz"])
+		}
+		secondRecord := m[1]
+		if secondRecord["foo"] != "2" {
+			t.Fatal("Expected 2 got", secondRecord["foo"])
+		}
+		if secondRecord["BAR"] != "Daniel" {
+			t.Fatal("Expected Daniel got", secondRecord["BAR"])
+		}
+		if secondRecord["Baz"] != "21" {
+			t.Fatal("Expected 21 got", secondRecord["Baz"])
+		}
+		thirdRecord := m[2]
+		if thirdRecord["foo"] != "5" {
+			t.Fatal("Expected 5 got", thirdRecord["foo"])
+		}
+		if thirdRecord["BAR"] != "Vincent" {
+			t.Fatal("Expected Vincent got", thirdRecord["BAR"])
+		}
+		if thirdRecord["Baz"] != "84" {
+			t.Fatal("Expected 84 got", thirdRecord["Baz"])
+		}
 	}
 }
 
@@ -784,7 +1152,7 @@ type trimDecoder struct {
 	csvReader CSVReader
 }
 
-func (c *trimDecoder) getCSVRow() ([]string, error) {
+func (c *trimDecoder) GetCSVRow() ([]string, error) {
 	recoder, err := c.csvReader.Read()
 	for i, r := range recoder {
 		recoder[i] = strings.TrimRight(r, " ")
@@ -792,10 +1160,10 @@ func (c *trimDecoder) getCSVRow() ([]string, error) {
 	return recoder, err
 }
 
-func (c *trimDecoder) getCSVRows() ([][]string, error) {
+func (c *trimDecoder) GetCSVRows() ([][]string, error) {
 	records := [][]string{}
 	for {
-		record, err := c.getCSVRow()
+		record, err := c.GetCSVRow()
 		if err == io.EOF {
 			break
 		} else if err != nil {
@@ -877,5 +1245,465 @@ func TestUnmarshalCSVWithoutHeaders(t *testing.T) {
 	expected = Sample{Foo: "e", Bar: 3, Baz: "blorp"}
 	if !reflect.DeepEqual(expected, samples[1]) {
 		t.Fatalf("expected second sample %v, got %v", expected, samples[1])
+	}
+}
+
+func TestUnmarshalToChanWithoutHeadersColumns(t *testing.T) {
+	type row struct {
+		Name    string `csv:"name"`
+		Count   int    `csv:"count"`
+		Ignored string `csv:"-"`
+	}
+	type details struct {
+		Count int `csv:"count"`
+	}
+	type nestedRow struct {
+		Name    string   `csv:"name"`
+		Details *details `csv:"details"`
+	}
+	tests := []struct {
+		name    string
+		input   string
+		channel interface{}
+		want    interface{}
+	}{
+		{
+			name:    "value records with extra columns",
+			input:   "first,1,ignored\nsecond,2,also ignored\n",
+			channel: make(chan row, 2),
+			want:    []row{{Name: "first", Count: 1}, {Name: "second", Count: 2}},
+		},
+		{
+			name:    "pointer records with several extra columns",
+			input:   "first,1,ignored,not a number\nsecond,2,ignored,\n",
+			channel: make(chan *row, 2),
+			want:    []*row{{Name: "first", Count: 1}, {Name: "second", Count: 2}},
+		},
+		{
+			name:    "nested pointer fields with extra columns",
+			input:   "first,1,ignored\nsecond,2,also ignored\n",
+			channel: make(chan nestedRow, 2),
+			want: []nestedRow{
+				{Name: "first", Details: &details{Count: 1}},
+				{Name: "second", Details: &details{Count: 2}},
+			},
+		},
+		{
+			name:    "quoted extra column",
+			input:   "first,1,\"ignored,too\"\n",
+			channel: make(chan row, 1),
+			want:    []row{{Name: "first", Count: 1}},
+		},
+		{
+			name:    "matching columns",
+			input:   "first,1\n",
+			channel: make(chan row, 1),
+			want:    []row{{Name: "first", Count: 1}},
+		},
+		{
+			name:    "fewer columns",
+			input:   "first\n",
+			channel: make(chan row, 1),
+			want:    []row{{Name: "first"}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			defer func() {
+				if p := recover(); p != nil {
+					t.Fatalf("headerless channel decoding panicked: %v", p)
+				}
+			}()
+			channel := reflect.ValueOf(tt.channel)
+			batch := reflect.New(reflect.SliceOf(channel.Type().Elem()))
+			if err := UnmarshalWithoutHeaders(strings.NewReader(tt.input), batch.Interface()); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(batch.Elem().Interface(), tt.want) {
+				t.Fatalf("batch records: got %#v, want %#v", batch.Elem().Interface(), tt.want)
+			}
+			if err := UnmarshalToChanWithoutHeaders(strings.NewReader(tt.input), tt.channel); err != nil {
+				t.Fatal(err)
+			}
+			got := reflect.MakeSlice(batch.Elem().Type(), 0, channel.Len())
+			for {
+				value, ok := channel.Recv()
+				if !ok {
+					break
+				}
+				got = reflect.Append(got, value)
+			}
+			if !reflect.DeepEqual(got.Interface(), tt.want) {
+				t.Fatalf("channel records: got %#v, want %#v", got.Interface(), tt.want)
+			}
+		})
+	}
+}
+
+func TestUnmarshalToChanWithoutHeadersErrors(t *testing.T) {
+	type row struct {
+		Name  string `csv:"name"`
+		Count int    `csv:"count"`
+	}
+	for _, tt := range []struct {
+		name    string
+		input   string
+		wantErr error
+		want    []row
+	}{
+		{
+			name:    "conversion error",
+			input:   "first,not a number,ignored\n",
+			wantErr: strconv.ErrSyntax,
+		},
+		{
+			name:    "reader error after a valid record",
+			input:   "first,1,ignored\nsecond,2\n",
+			wantErr: csv.ErrFieldCount,
+			want:    []row{{Name: "first", Count: 1}},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			channel := make(chan row, 2)
+			err := UnmarshalToChanWithoutHeaders(strings.NewReader(tt.input), channel)
+			if _, ok := err.(*csv.ParseError); !ok {
+				t.Fatalf("got error %v, want *csv.ParseError", err)
+			}
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("got error %v, want %v", err, tt.wantErr)
+			}
+			var got []row
+			for value := range channel {
+				got = append(got, value)
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("records before error: got %#v, want %#v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDecodeDefaultValues(t *testing.T) {
+	type defaultValueStruct struct {
+		Foo string `csv:"foo,default=x"`
+		Bar int    `csv:"bar,default=42"`
+	}
+	b := bytes.NewBufferString(`foo,bar
+,
+`)
+	var out []defaultValueStruct
+	if err := Unmarshal(b, &out); err != nil {
+		t.Fatal(err)
+	}
+
+	expected := defaultValueStruct{
+		Foo: "x",
+		Bar: 42,
+	}
+	if !reflect.DeepEqual(expected, out[0]) {
+		t.Fatalf("expected second sample %v, got %v", expected, out[0])
+	}
+}
+
+func TestDecodePartialKeys(t *testing.T) {
+	type defaultValueStruct struct {
+		Foo string `csv:"foo,partial"`
+		Bar int    `csv:"bar,partial"`
+	}
+	b := bytes.NewBufferString(`foolo,ambar
+x,42
+`)
+	var out []defaultValueStruct
+	if err := Unmarshal(b, &out); err != nil {
+		t.Fatal(err)
+	}
+
+	expected := defaultValueStruct{
+		Foo: "x",
+		Bar: 42,
+	}
+	if !reflect.DeepEqual(expected, out[0]) {
+		t.Fatalf("expected second sample %v, got %v", expected, out[0])
+	}
+}
+
+func TestTrimTagWhitespace(t *testing.T) {
+	type whiteSpaceOptionStruct struct {
+		Foo *string `csv:"foo, omitempty"`
+		Bar int     `csv:"bar, default=13 "`
+	}
+	var out []whiteSpaceOptionStruct
+	b := bytes.NewBufferString(`foo,bar
+,`)
+	if err := Unmarshal(b, &out); err != nil {
+		t.Fatal(err)
+	}
+	expected := whiteSpaceOptionStruct{
+		Foo: nil,
+		Bar: 13,
+	}
+
+	if !reflect.DeepEqual(expected, out[0]) {
+		t.Fatalf("expected sample %v, got %v", expected, out[0])
+	}
+}
+
+func TestUnmarshalCSVToMap(t *testing.T) {
+	b := []byte(`line	tokens
+10	["PRINT", "\"Hello map!\""]
+20	["GOTO", "10"]`)
+	r := bytes.NewReader(b)
+	csvReader := csv.NewReader(r)
+	csvReader.LazyQuotes = true
+	csvReader.Comma = '\t'
+
+	var sample map[int][]string
+	if err := UnmarshalCSVToMap(csvReader, &sample); err != nil {
+		t.Fatal(err)
+	}
+
+	expected := map[int][]string{
+		10: {"PRINT", "\"Hello map!\""},
+		20: {"GOTO", "10"},
+	}
+	if !reflect.DeepEqual(expected, sample) {
+		t.Fatalf("expected %v, got %v", expected, sample)
+	}
+}
+
+func BenchmarkCSVToMap(b *testing.B) {
+	bufstring := bytes.NewBufferString(`foo,BAR
+4,Jose
+2,Daniel
+5,Vincent`)
+	for n := 0; n < b.N; n++ {
+		_, err := CSVToMap(bytes.NewReader(bufstring.Bytes()))
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkUnmarshalCSVToMap(b *testing.B) {
+	bufstring := []byte(`foo,BAR
+4,Jose
+2,Daniel
+5,Vincent`)
+	for n := 0; n < b.N; n++ {
+		var sample map[string]string
+		r := bytes.NewReader(bufstring)
+		d := csv.NewReader(r)
+		err := UnmarshalCSVToMap(d, &sample)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func Test_readTo_nested_struct(t *testing.T) {
+	b := bytes.NewBufferString(`one.boolField1,one.stringField2,two.boolField1,two.stringField2,three.boolField1,three.stringField2
+false,email_one,true,email_two,false,email_three`)
+	d := newSimpleDecoderFromReader(b)
+
+	var samples []NestedSample
+	err := readTo(d, &samples)
+	if err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	expected := []NestedSample{
+		{
+			Inner1: InnerStruct{
+				BoolIgnoreField0: false,
+				BoolField1:       false,
+				StringField2:     "email_one",
+			},
+			Inner2: InnerStruct{
+				BoolIgnoreField0: false,
+				BoolField1:       true,
+				StringField2:     "email_two",
+			},
+			Inner3: NestedEmbedSample{InnerStruct{
+				BoolIgnoreField0: false,
+				BoolField1:       false,
+				StringField2:     "email_three",
+			}},
+		},
+	}
+
+	if !reflect.DeepEqual(expected, samples) {
+		t.Fatalf("expected \n  sample: %v\n     got: %v", expected, samples)
+	}
+}
+
+func Test_readTo_inline_nested_struct(t *testing.T) {
+	b := bytes.NewBufferString("a,b,x\n1,2,3")
+	d := newSimpleDecoderFromReader(b)
+
+	var samples []InlineFooSample
+	if err := readTo(d, &samples); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	expected := []InlineFooSample{{Bar: InlineBar{A: 1, B: 2}, X: 3}}
+	if !reflect.DeepEqual(expected, samples) {
+		t.Fatalf("expected \n  sample: %v\n     got: %v", expected, samples)
+	}
+}
+
+func TestUnmarshalZeroPaddedNumbers(t *testing.T) {
+	type row struct {
+		Name  string `csv:"name"`
+		Code  int    `csv:"code"`
+		Count uint   `csv:"count"`
+	}
+
+	in := "name,code,count\n" +
+		"a,08,08\n" +
+		"b,09,09\n" +
+		"c,010,010\n" +
+		"d,007,007\n"
+
+	var got []row
+	if err := UnmarshalString(in, &got); err != nil {
+		t.Fatalf("UnmarshalString failed on zero-padded numbers: %s", err)
+	}
+
+	want := []row{
+		{Name: "a", Code: 8, Count: 8},
+		{Name: "b", Code: 9, Count: 9},
+		{Name: "c", Code: 10, Count: 10},
+		{Name: "d", Code: 7, Count: 7},
+	}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("UnmarshalString returned %+v, want %+v", got, want)
+	}
+}
+
+type nestedOmitChild struct {
+	Value string `csv:"value,omitempty" json:"value,omitempty"`
+}
+
+type nestedOmitRecord struct {
+	Child *nestedOmitChild `csv:"child,omitempty" json:"child,omitempty"`
+}
+
+func TestUnmarshalNumberOutOfRange(t *testing.T) {
+	type smallInt int8
+	type row struct {
+		I8  int8     `csv:"i8"`
+		U8  uint8    `csv:"u8"`
+		I16 *int16   `csv:"i16"`
+		F32 float32  `csv:"f32"`
+		SI  smallInt `csv:"si"`
+	}
+
+	var ok []row
+	if err := UnmarshalString("i8,u8,i16,f32,si\n-128,255,32767,1.5,127\n", &ok); err != nil {
+		t.Fatalf("UnmarshalString failed on in-range values: %s", err)
+	}
+	if ok[0].I8 != -128 || ok[0].U8 != 255 || *ok[0].I16 != 32767 || ok[0].F32 != 1.5 || ok[0].SI != 127 {
+		t.Errorf("UnmarshalString returned %+v", ok[0])
+	}
+
+	for _, in := range []string{
+		"i8,u8,i16,f32,si\n300,0,0,0,0\n",
+		"i8,u8,i16,f32,si\n-129,0,0,0,0\n",
+		"i8,u8,i16,f32,si\n0,256,0,0,0\n",
+		"i8,u8,i16,f32,si\n0,0,40000,0,0\n",
+		"i8,u8,i16,f32,si\n0,0,0,1e39,0\n",
+		"i8,u8,i16,f32,si\n0,0,0,0,128\n",
+	} {
+		var got []row
+		err := UnmarshalString(in, &got)
+		if !errors.Is(err, strconv.ErrRange) {
+			t.Errorf("UnmarshalString(%q) returned %+v, %v; want a range error", in, got, err)
+		}
+	}
+}
+
+func TestUnmarshalNestedPointerOmitEmpty(t *testing.T) {
+	input := []*nestedOmitRecord{{Child: &nestedOmitChild{Value: "present"}}}
+	encoded, err := MarshalString(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output []*nestedOmitRecord
+	if err := UnmarshalString(encoded, &output); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(input, output) {
+		t.Fatalf("round trip: got %#v, want %#v", output, input)
+	}
+}
+
+func TestNestedPointerDecodeEntryPoints(t *testing.T) {
+	input := "child.value\npresent\n"
+	for _, name := range []string{"slice", "without-headers", "channel", "channel-without-headers", "callback"} {
+		t.Run(name, func(t *testing.T) {
+			var output []*nestedOmitRecord
+			var err error
+			switch name {
+			case "slice":
+				err = UnmarshalString(input, &output)
+			case "without-headers":
+				err = UnmarshalWithoutHeaders(strings.NewReader("present\n"), &output)
+			case "channel", "channel-without-headers":
+				channel := make(chan *nestedOmitRecord, 1)
+				if name == "channel" {
+					err = UnmarshalToChan(strings.NewReader(input), channel)
+				} else {
+					err = UnmarshalToChanWithoutHeaders(strings.NewReader("present\n"), channel)
+				}
+				for record := range channel {
+					output = append(output, record)
+				}
+			case "callback":
+				err = UnmarshalToCallback(strings.NewReader(input), func(record *nestedOmitRecord) {
+					output = append(output, record)
+				})
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(output) != 1 || output[0].Child == nil || output[0].Child.Value != "present" {
+				t.Fatalf("incorrect nested output: %#v", output)
+			}
+		})
+	}
+}
+
+func TestNestedPointerLeafOmission(t *testing.T) {
+	type child struct {
+		Value string  `csv:"value,omitempty"`
+		Empty *string `csv:"empty,omitempty"`
+	}
+	type middle struct {
+		Child *child `csv:"child,omitempty"`
+	}
+	type record struct {
+		Middle *middle `csv:"middle,omitempty"`
+	}
+	var output []record
+	if err := UnmarshalString("middle.child.value,middle.child.empty\npresent,\n", &output); err != nil {
+		t.Fatal(err)
+	}
+	if output[0].Middle.Child.Value != "present" || output[0].Middle.Child.Empty != nil {
+		t.Fatalf("leaf omission changed: %#v", output[0].Middle.Child)
+	}
+}
+
+func TestEmptyBooleanPointerDecodesAsNil(t *testing.T) {
+	type record struct {
+		Name     string `csv:"name"`
+		Optional *bool  `csv:"optional"`
+	}
+	var output []record
+	if err := UnmarshalString("name,optional\nempty,\ntrue,true\nfalse,false\n", &output); err != nil {
+		t.Fatal(err)
+	}
+	if len(output) != 3 || output[0].Optional != nil || output[1].Optional == nil || !*output[1].Optional || output[2].Optional == nil || *output[2].Optional {
+		t.Fatalf("unexpected nullable booleans: %#v", output)
 	}
 }

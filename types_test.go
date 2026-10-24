@@ -37,6 +37,33 @@ func (s sampleStringer) String() string {
 	return string(s)
 }
 
+type stringAlias string
+type customStringAlias string
+
+func (s customStringAlias) MarshalCSV() (string, error) {
+	return `"` + string(s) + `"`, nil
+}
+
+func Test_getFieldAsString_CustomStringAlias(t *testing.T) {
+	s, err := getFieldAsString(reflect.ValueOf(customStringAlias("foo")))
+	if err != nil {
+		t.Fatalf("getFieldAsString failure: %s", err)
+	}
+
+	if string(s) != `"foo"` {
+		t.Fatalf(`expected "foo" got %s`, s)
+	}
+
+	s, err = getFieldAsString(reflect.ValueOf(stringAlias("foo")))
+	if err != nil {
+		t.Fatalf("getFieldAsString failure: %s", err)
+	}
+
+	if string(s) != `foo` {
+		t.Fatalf(`expected foo got %s`, s)
+	}
+}
+
 func Benchmark_unmarshall_TypeUnmarshaller(b *testing.B) {
 	sample := sampleTypeUnmarshaller{}
 	val := reflect.ValueOf(&sample)
@@ -109,6 +136,61 @@ func TestToInt(t *testing.T) {
 		}
 		if int(out) != item.result {
 			t.Fatal(idx, "result not equal")
+		}
+	}
+}
+
+func TestToIntLeadingZeros(t *testing.T) {
+	testCases := []struct {
+		field  string
+		result int64
+	}{
+		{"08", 8},
+		{"09", 9},
+		{"010", 10},
+		{"007", 7},
+		{"0009", 9},
+		{"-08", -8},
+		{"-010", -10},
+		{"0", 0},
+		{"00", 0},
+		{"010.9", 10},
+	}
+
+	for _, item := range testCases {
+		out, err := toInt(item.field)
+		if err != nil {
+			t.Errorf("toInt(%q) returned an error: %s", item.field, err)
+			continue
+		}
+		if out != item.result {
+			t.Errorf("toInt(%q) = %d, want %d", item.field, out, item.result)
+		}
+	}
+}
+
+func TestToUintLeadingZeros(t *testing.T) {
+	testCases := []struct {
+		field  string
+		result uint64
+	}{
+		{"08", 8},
+		{"09", 9},
+		{"010", 10},
+		{"007", 7},
+		{"0009", 9},
+		{"0", 0},
+		{"00", 0},
+	}
+
+	for _, item := range testCases {
+		out, err := toUint(item.field)
+		if err != nil {
+			t.Errorf("toUint(%q) returned an error: %s", item.field, err)
+			continue
+		}
+		if out != item.result {
+			t.Errorf("toUint(%q) = %d, want %d", item.field, out, item.result)
 		}
 	}
 }
