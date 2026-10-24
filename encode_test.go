@@ -5,7 +5,6 @@ import (
 	"encoding/csv"
 	"errors"
 	"io"
-	"io/ioutil"
 	"math"
 	"strconv"
 	"strings"
@@ -182,7 +181,7 @@ func Test_writeTo_slice(t *testing.T) {
 func TestMarshalInterfaceSlice(t *testing.T) {
 	type sample struct {
 		Type  string
-		Value interface{}
+		Value any
 	}
 
 	csvContent, err := MarshalString(&[]sample{
@@ -241,8 +240,8 @@ func Test_writeTo_embed(t *testing.T) {
 	sptr := "*string"
 	s := []EmbedSample{
 		{
-			Qux:    "aaa",
-			Sample: Sample{Foo: "f", Bar: 1, Baz: "baz", Frop: 0.2, Blah: &blah, SPtr: &sptr},
+			Qux: "aaa",
+			Foo: "f", Bar: 1, Baz: "baz", Frop: 0.2, Blah: &blah, SPtr: &sptr,
 			Ignore: "shouldn't be marshalled",
 			Quux:   "zzz",
 			Grault: math.Pi,
@@ -334,11 +333,9 @@ func Test_writeTo_embedmarshal(t *testing.T) {
 	}
 	assertLine(t, []string{"foo"}, lines[0])
 	assertLine(t, []string{"bar"}, lines[1])
-
 }
 
 func Test_writeTo_embedmarshalCSV(t *testing.T) {
-
 	// First, create our test data
 	b := new(bytes.Buffer)
 	e := &encoder{out: b}
@@ -378,20 +375,16 @@ func Test_writeTo_complex_embed(t *testing.T) {
 	sptr := "*string"
 	sfs := []SkipFieldSample{
 		{
-			EmbedSample: EmbedSample{
-				Qux: "aaa",
-				Sample: Sample{
-					Foo:  "bbb",
-					Bar:  111,
-					Baz:  "ddd",
-					Frop: 1.2e22,
-					Blah: nil,
-					SPtr: &sptr,
-				},
-				Ignore: "eee",
-				Grault: 0.1,
-				Quux:   "fff",
-			},
+			Qux:        "aaa",
+			Foo:        "bbb",
+			Bar:        111,
+			Baz:        "ddd",
+			Frop:       1.2e22,
+			Blah:       nil,
+			SPtr:       &sptr,
+			Ignore:     "eee",
+			Grault:     0.1,
+			Quux:       "fff",
 			MoreIgnore: "ggg",
 			Corge:      "hhh",
 		},
@@ -452,10 +445,10 @@ func Test_writeTo_complex_inner_struct_embed(t *testing.T) {
 func Test_writeToChan(t *testing.T) {
 	b := bytes.Buffer{}
 	e := &encoder{out: &b}
-	c := make(chan interface{})
+	c := make(chan any)
 	sptr := "*string"
 	go func() {
-		for i := 0; i < 100; i++ {
+		for i := range 100 {
 			v := Sample{Foo: "f", Bar: i, Baz: "baz" + strconv.Itoa(i), Frop: float64(i), Blah: nil, SPtr: &sptr}
 			c <- v
 		}
@@ -483,7 +476,7 @@ func Test_writeToChan(t *testing.T) {
 func Test_MarshalChan_ClosedChannel(t *testing.T) {
 	b := bytes.Buffer{}
 	e := &encoder{out: &b}
-	c := make(chan interface{})
+	c := make(chan any)
 	close(c)
 
 	if err := MarshalChan(c, NewSafeCSVWriter(csv.NewWriter(e.out))); !errors.Is(err, ErrChannelIsClosed) {
@@ -579,7 +572,7 @@ func (rf *RenamedFloat64Unmarshaler) MarshalCSV() (csv string, err error) {
 		return "", MarshalError{"Test error: Invalid float 4.2"}
 	}
 	csv = strconv.FormatFloat(float64(*rf), 'f', 1, 64)
-	csv = strings.Replace(csv, ".", ",", -1)
+	csv = strings.ReplaceAll(csv, ".", ",")
 	return csv, nil
 }
 
@@ -592,8 +585,8 @@ func (e MarshalError) Error() string {
 }
 
 func Benchmark_MarshalCSVWithoutHeaders(b *testing.B) {
-	dst := NewSafeCSVWriter(csv.NewWriter(ioutil.Discard))
-	for n := 0; n < b.N; n++ {
+	dst := NewSafeCSVWriter(csv.NewWriter(io.Discard))
+	for b.Loop() {
 		err := MarshalCSVWithoutHeaders([]Sample{{}}, dst)
 		if err != nil {
 			b.Fatal(err)
@@ -662,7 +655,6 @@ matthew,2022-12-11T13:14:15.000123456Z
 			t.Fatalf("Error marshaling floats with , as separator. Expected \n%s\ngot:\n%s", want, got)
 		}
 	})
-
 }
 
 func Test_non_marshaling_nested_fields_are_prefixed(t *testing.T) {

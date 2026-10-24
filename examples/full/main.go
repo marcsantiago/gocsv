@@ -4,11 +4,10 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"time"
 
-	"github.com/gocarina/gocsv"
+	"github.com/marcsantiago/gocsv"
 )
 
 type NotUsed struct {
@@ -31,8 +30,10 @@ type Address struct {
 	City   string `csv:"city"`
 }
 
-var _ gocsv.TypeMarshaller = new(DateTime)
-var _ gocsv.TypeUnmarshaller = new(DateTime)
+var (
+	_ gocsv.TypeMarshaller   = new(DateTime)
+	_ gocsv.TypeUnmarshaller = new(DateTime)
+)
 
 type DateTime struct {
 	time.Time
@@ -45,7 +46,7 @@ func (date *DateTime) MarshalCSV() (string, error) {
 
 // You could also use the standard Stringer interface
 func (date DateTime) String() string {
-	return date.Time.Format("20060102")
+	return date.Format("20060102")
 }
 
 // Convert the CSV string as internal date
@@ -69,29 +70,33 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	defer clientsFile.Close()
+	defer func() { _ = clientsFile.Close() }()
 
 	// Create clients
 	clients := []*Client{
-		{ID: "12", Name: "John", Age: "21",
+		{
+			ID: "12", Name: "John", Age: "21",
 			Address1: Address{"Street 1", "City1"},
 			Address2: Address{"Street 2", "City2"},
-			Employed: DateTime{time.Date(2022, 11, 04, 12, 0, 0, 0, time.UTC)},
+			Employed: DateTime{time.Date(2022, 11, 0o4, 12, 0, 0, 0, time.UTC)},
 		},
-		{ID: "13", Name: "Fred",
+		{
+			ID: "13", Name: "Fred",
 			Address1: Address{`Main "Street" 1`, "City1"}, // show quotes in value
 			Address2: Address{"Main Street 2", "City2"},
-			Employed: DateTime{time.Date(2022, 11, 04, 13, 0, 0, 0, time.UTC)},
+			Employed: DateTime{time.Date(2022, 11, 0o4, 13, 0, 0, 0, time.UTC)},
 		},
-		{ID: "14", Name: "James", Age: "32",
+		{
+			ID: "14", Name: "James", Age: "32",
 			Address1: Address{"Center Street 1", "City1"},
 			Address2: Address{"Center Street 2", "City2"},
-			Employed: DateTime{time.Date(2022, 11, 04, 14, 0, 0, 0, time.UTC)},
+			Employed: DateTime{time.Date(2022, 11, 0o4, 14, 0, 0, 0, time.UTC)},
 		},
-		{ID: "15", Name: "Danny",
+		{
+			ID: "15", Name: "Danny",
 			Address1: Address{"State Street 1", "City1"},
 			Address2: Address{"State Street 2", "City2"},
-			Employed: DateTime{time.Date(2022, 11, 04, 15, 0, 0, 0, time.UTC)},
+			Employed: DateTime{time.Date(2022, 11, 0o4, 15, 0, 0, 0, time.UTC)},
 		},
 	}
 	// Save clients to csv file
@@ -104,7 +109,7 @@ func main() {
 		panic(err)
 	}
 	// Read file and print to console
-	b, err := ioutil.ReadAll(clientsFile)
+	b, err := io.ReadAll(clientsFile)
 	if err != nil {
 		panic(err)
 	}
@@ -122,7 +127,8 @@ func main() {
 	}
 	fmt.Println("clients:")
 	for _, c := range newClients {
-		fmt.Printf("%s:%s Adress1:%s, %s Address2:%s, %s Employed: %s\n",
+		fmt.Printf(
+			"%s:%s Address1:%s, %s Address2:%s, %s Employed: %s\n",
 			c.ID, c.Name,
 			c.Address1.Street, c.Address1.City,
 			c.Address2.Street, c.Address2.City,

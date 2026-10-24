@@ -5,7 +5,6 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-	"sync"
 )
 
 // --------------------------------------------------------------------------
@@ -58,9 +57,6 @@ func removeZeroWidthChars(s string) string {
 	}, s)
 }
 
-var structMap = make(map[reflect.Type]*structInfo)
-var structMapMutex sync.RWMutex
-
 func getStructInfo(rType reflect.Type) *structInfo {
 	structInfos := &loadHeaderNormalization().structInfos
 	stInfo, ok := structInfos.Load(rType)
@@ -84,13 +80,13 @@ func getFieldInfos(rType reflect.Type, parentIndexChain []int, parentKeys []stri
 
 	fieldsCount := rType.NumField()
 	fieldsList := make([]fieldInfo, 0, fieldsCount)
-	for i := 0; i < fieldsCount; i++ {
+	for i := range fieldsCount {
 		field := rType.Field(i)
 		if field.PkgPath != "" {
 			continue
 		}
 
-		var cpy = make([]int, len(parentIndexChain))
+		cpy := make([]int, len(parentIndexChain))
 		copy(cpy, parentIndexChain)
 		indexChain := append(cpy, i)
 
@@ -98,14 +94,14 @@ func getFieldInfos(rType reflect.Type, parentIndexChain []int, parentKeys []stri
 		// Structs that implement any of the text or CSV marshaling methods
 		// should result in one value and not have their fields exposed
 		fieldType := field.Type
-		if fieldType.Kind() == reflect.Ptr {
+		if fieldType.Kind() == reflect.Pointer {
 			fieldType = fieldType.Elem()
 		}
 		isExpandableStruct := fieldType.Kind() == reflect.Struct && !canMarshal(fieldType)
 
 		var currFieldInfo *fieldInfo
 		if !field.Anonymous {
-			filteredTags := []string{}
+			var filteredTags []string
 			currFieldInfo, filteredTags = filterTags(TagName, indexChain, field)
 
 			if len(filteredTags) == 1 && filteredTags[0] == "-" {
@@ -155,7 +151,7 @@ func getFieldInfos(rType reflect.Type, parentIndexChain []int, parentKeys []stri
 		}
 
 		if field.Type.Kind() == reflect.Slice || field.Type.Kind() == reflect.Array {
-			var arrayLength = -1
+			arrayLength := -1
 			// if the field is a slice or an array, see if it has a `csv[n]` tag
 			if arrayTag, ok := field.Tag.Lookup(TagName + "[]"); ok {
 				arrayLength, _ = strconv.Atoi(arrayTag)
@@ -175,12 +171,12 @@ func getFieldInfos(rType reflect.Type, parentIndexChain []int, parentKeys []stri
 					// When the field is a slice/array of structs, create a fieldInfo for each index and each field
 					for idx := 0; idx < arrayLength; idx++ {
 						// copy index chain and append array index
-						var cpy2 = make([]int, len(indexChain))
+						cpy2 := make([]int, len(indexChain))
 						copy(cpy2, indexChain)
 						arrayIndexChain := append(cpy2, idx)
 						for _, childFieldInfo := range fieldInfos {
 							// copy array index chain and append array index
-							var cpy3 = make([]int, len(arrayIndexChain))
+							cpy3 := make([]int, len(arrayIndexChain))
 							copy(cpy3, arrayIndexChain)
 
 							arrayFieldInfo := fieldInfo{
@@ -206,7 +202,7 @@ func getFieldInfos(rType reflect.Type, parentIndexChain []int, parentKeys []stri
 				// When the field is a slice/array of primitives, create a fieldInfo for each index
 				for idx := 0; idx < arrayLength; idx++ {
 					// copy index chain and append array index
-					var cpy2 = make([]int, len(indexChain))
+					cpy2 := make([]int, len(indexChain))
 					copy(cpy2, indexChain)
 
 					arrayFieldInfo := fieldInfo{
@@ -248,8 +244,8 @@ func filterTags(tagName string, indexChain []int, field reflect.StructField) (*f
 			// happens to start with "partial" (e.g. `csv:"partial_delivery_number"`) for the
 			// "partial" option, dropping the real column name. See issue #274.
 			currFieldInfo.partial = true
-		} else if strings.HasPrefix(trimmedFieldTagEntry, "default=") {
-			currFieldInfo.defaultValue = strings.TrimPrefix(trimmedFieldTagEntry, "default=")
+		} else if after, ok := strings.CutPrefix(trimmedFieldTagEntry, "default="); ok {
+			currFieldInfo.defaultValue = after
 		} else {
 			filteredTags = append(filteredTags, normalizeName(trimmedFieldTagEntry))
 		}
@@ -261,22 +257,22 @@ func filterTags(tagName string, indexChain []int, field reflect.StructField) (*f
 func getConcreteContainerInnerType(in reflect.Type) (inInnerWasPointer bool, inInnerType reflect.Type) {
 	inInnerType = in.Elem()
 	inInnerWasPointer = false
-	if inInnerType.Kind() == reflect.Ptr {
+	if inInnerType.Kind() == reflect.Pointer {
 		inInnerWasPointer = true
 		inInnerType = inInnerType.Elem()
 	}
 	return inInnerWasPointer, inInnerType
 }
 
-func getConcreteReflectValueAndType(in interface{}) (reflect.Value, reflect.Type) {
+func getConcreteReflectValueAndType(in any) (reflect.Value, reflect.Type) {
 	value := reflect.ValueOf(in)
-	if value.Kind() == reflect.Ptr {
+	if value.Kind() == reflect.Pointer {
 		value = value.Elem()
 	}
 	return value, value.Type()
 }
 
-var errorInterface = reflect.TypeOf((*error)(nil)).Elem()
+var errorInterface = reflect.TypeFor[error]()
 
 func isErrorType(outType reflect.Type) bool {
 	if outType.Kind() != reflect.Interface {

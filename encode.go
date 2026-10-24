@@ -7,20 +7,14 @@ import (
 	"reflect"
 )
 
-var (
-	ErrChannelIsClosed = errors.New("channel is closed")
-)
+var ErrChannelIsClosed = errors.New("channel is closed")
 
 type encoder struct {
 	out io.Writer
 }
 
-func newEncoder(out io.Writer) *encoder {
-	return &encoder{out}
-}
-
-func writeFromChan(writer CSVWriter, c <-chan interface{}, omitHeaders bool) error {
-	// Get the first value. It wil determine the header structure.
+func writeFromChan(writer CSVWriter, c <-chan any, omitHeaders bool) error {
+	// Get the first value. It will determine the header structure.
 	firstValue, ok := <-c
 	if !ok {
 		return ErrChannelIsClosed
@@ -29,7 +23,7 @@ func writeFromChan(writer CSVWriter, c <-chan interface{}, omitHeaders bool) err
 	if err := ensureStructOrPtr(inType); err != nil {
 		return err
 	}
-	inInnerWasPointer := inType.Kind() == reflect.Ptr
+	inInnerWasPointer := inType.Kind() == reflect.Pointer
 	inInnerStructInfo := getStructInfo(inType) // Get the inner struct info to get CSV annotations
 	if inInnerStructInfo.Err != nil {
 		return inInnerStructInfo.Err
@@ -73,7 +67,7 @@ func writeFromChan(writer CSVWriter, c <-chan interface{}, omitHeaders bool) err
 	return writer.Error()
 }
 
-func writeTo(writer CSVWriter, in interface{}, omitHeaders bool) error {
+func writeTo(writer CSVWriter, in any, omitHeaders bool) error {
 	inValue, inType := getConcreteReflectValueAndType(in) // Get the concrete type (not pointer) (Slice<?> or Array<?>)
 	if err := ensureInType(inType); err != nil {
 		return err
@@ -96,7 +90,7 @@ func writeTo(writer CSVWriter, in interface{}, omitHeaders bool) error {
 		}
 	}
 	inLen := inValue.Len()
-	for i := 0; i < inLen; i++ { // Iterate over container rows
+	for i := range inLen { // Iterate over container rows
 		for j, fieldInfo := range inInnerStructInfo.Fields {
 			csvHeadersLabels[j] = ""
 			inInnerFieldValue, err := getInnerField(inValue.Index(i), inInnerWasPointer, fieldInfo.IndexChain) // Get the correct field header <-> position
@@ -117,10 +111,10 @@ func ensureStructOrPtr(t reflect.Type) error {
 	switch t.Kind() {
 	case reflect.Struct:
 		fallthrough
-	case reflect.Ptr:
+	case reflect.Pointer:
 		return nil
 	}
-	return fmt.Errorf("cannot use " + t.String() + ", only slice or array supported")
+	return fmt.Errorf("cannot use %s, only struct or ptr supported", t.String())
 }
 
 // Check if the inType is an array or a slice
@@ -131,7 +125,7 @@ func ensureInType(outType reflect.Type) error {
 	case reflect.Array:
 		return nil
 	}
-	return fmt.Errorf("cannot use " + outType.String() + ", only slice or array supported")
+	return fmt.Errorf("cannot use %s, only slice or array supported", outType.String())
 }
 
 // Check if the inInnerType is of type struct
@@ -140,7 +134,7 @@ func ensureInInnerType(outInnerType reflect.Type) error {
 	case reflect.Struct:
 		return nil
 	}
-	return fmt.Errorf("cannot use " + outInnerType.String() + ", only struct supported")
+	return fmt.Errorf("cannot use %s, only struct is supported", outInnerType.String())
 }
 
 func getInnerField(outInner reflect.Value, outInnerWasPointer bool, index []int) (string, error) {
@@ -169,7 +163,7 @@ func getInnerField(outInner reflect.Value, outInnerWasPointer bool, index []int)
 	// because pointers can be nil need to recurse one index at a time and perform nil check
 	if len(index) > 1 {
 		nextField := oi.Field(index[0])
-		return getInnerField(nextField, nextField.Kind() == reflect.Ptr, index[1:])
+		return getInnerField(nextField, nextField.Kind() == reflect.Pointer, index[1:])
 	}
 	return getFieldAsString(oi.FieldByIndex(index))
 }
