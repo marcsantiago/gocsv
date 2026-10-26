@@ -13,7 +13,7 @@ type encoder struct {
 	out io.Writer
 }
 
-func writeFromChan(writer CSVWriter, c <-chan any, omitHeaders bool) error {
+func writeFromChan(writer CSVWriter, c <-chan any, omitHeaders bool, modifiers *Modifiers) error {
 	// Get the first value. It will determine the header structure.
 	firstValue, ok := <-c
 	if !ok {
@@ -24,7 +24,7 @@ func writeFromChan(writer CSVWriter, c <-chan any, omitHeaders bool) error {
 		return err
 	}
 	inInnerWasPointer := inType.Kind() == reflect.Pointer
-	inInnerStructInfo := getStructInfo(inType) // Get the inner struct info to get CSV annotations
+	inInnerStructInfo := getStructInfo(inType, modifiers) // Get the inner struct info to get CSV annotations
 	if inInnerStructInfo.Err != nil {
 		return inInnerStructInfo.Err
 	}
@@ -67,7 +67,7 @@ func writeFromChan(writer CSVWriter, c <-chan any, omitHeaders bool) error {
 	return writer.Error()
 }
 
-func writeTo(writer CSVWriter, in any, omitHeaders bool) error {
+func writeTo(writer CSVWriter, in any, omitHeaders bool, modifiers *Modifiers) error {
 	inValue, inType := getConcreteReflectValueAndType(in) // Get the concrete type (not pointer) (Slice<?> or Array<?>)
 	if err := ensureInType(inType); err != nil {
 		return err
@@ -76,7 +76,7 @@ func writeTo(writer CSVWriter, in any, omitHeaders bool) error {
 	if err := ensureInInnerType(inInnerType); err != nil {
 		return err
 	}
-	inInnerStructInfo := getStructInfo(inInnerType) // Get the inner struct info to get CSV annotations
+	inInnerStructInfo := getStructInfo(inInnerType, modifiers) // Get the inner struct info to get CSV annotations
 	if inInnerStructInfo.Err != nil {
 		return inInnerStructInfo.Err
 	}

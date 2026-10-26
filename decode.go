@@ -140,11 +140,11 @@ func convertTo(file *multipart.File) io.Reader {
 	return io.Reader(*file)
 }
 
-func readTo(decoder Decoder, out any) error {
-	return readToWithErrorHandler(decoder, nil, out)
+func readTo(decoder Decoder, out any, modifiers *Modifiers) error {
+	return readToWithErrorHandler(decoder, nil, out, modifiers)
 }
 
-func readToWithErrorHandler(decoder Decoder, errHandler ErrorHandler, out any) error {
+func readToWithErrorHandler(decoder Decoder, errHandler ErrorHandler, out any, modifiers *Modifiers) error {
 	outValue, outType := getConcreteReflectValueAndType(out) // Get the concrete type (not pointer) (Slice<?> or Array<?>)
 	if err := ensureOutType(outType); err != nil {
 		return err
@@ -163,7 +163,7 @@ func readToWithErrorHandler(decoder Decoder, errHandler ErrorHandler, out any) e
 	if err := ensureOutCapacity(&outValue, len(csvRows)); err != nil { // Ensure the container is big enough to hold the CSV content
 		return err
 	}
-	outInnerStructInfo := getStructInfo(outInnerType) // Get the inner struct info to get CSV annotations
+	outInnerStructInfo := getStructInfo(outInnerType, modifiers) // Get the inner struct info to get CSV annotations
 	if outInnerStructInfo.Err != nil {
 		return outInnerStructInfo.Err
 	}
@@ -181,19 +181,19 @@ func readToWithErrorHandler(decoder Decoder, errHandler ErrorHandler, out any) e
 		curHeaderCount := headerCount[csvColumnHeader]
 		if fieldInfo := getCSVFieldPosition(csvColumnHeader, outInnerStructInfo, curHeaderCount); fieldInfo != nil {
 			csvHeadersLabels[i] = fieldInfo
-			if ShouldAlignDuplicateHeadersWithStructFieldOrder {
+			if modifiers.shouldAlignDuplicateHeadersWithStructFieldOrder {
 				curHeaderCount++
 				headerCount[csvColumnHeader] = curHeaderCount
 			}
 		}
 	}
 
-	if FailIfUnmatchedStructTags {
+	if modifiers.failIfUnmatchedStructTags {
 		if err := maybeMissingStructFields(outInnerStructInfo.Fields, headers); err != nil {
 			return err
 		}
 	}
-	if FailIfDoubleHeaderNames {
+	if modifiers.failIfDoubleHeaderNames {
 		if err := maybeDoubleHeaderNames(headers); err != nil {
 			return err
 		}
@@ -253,7 +253,7 @@ func readToWithErrorHandler(decoder Decoder, errHandler ErrorHandler, out any) e
 	return nil
 }
 
-func readEach(decoder SimpleDecoder, errHandler ErrorHandler, c any) error {
+func readEach(decoder SimpleDecoder, errHandler ErrorHandler, c any, modifiers *Modifiers) error {
 	outValue, outType := getConcreteReflectValueAndType(c) // Get the concrete type (not pointer)
 	if outType.Kind() != reflect.Chan {
 		return fmt.Errorf("cannot use %v with type %s, only channel supported", c, outType)
@@ -270,7 +270,7 @@ func readEach(decoder SimpleDecoder, errHandler ErrorHandler, c any) error {
 	if err := ensureOutInnerType(outInnerType); err != nil {
 		return err
 	}
-	outInnerStructInfo := getStructInfo(outInnerType) // Get the inner struct info to get CSV annotations
+	outInnerStructInfo := getStructInfo(outInnerType, modifiers) // Get the inner struct info to get CSV annotations
 	if outInnerStructInfo.Err != nil {
 		return outInnerStructInfo.Err
 	}
@@ -283,18 +283,18 @@ func readEach(decoder SimpleDecoder, errHandler ErrorHandler, c any) error {
 		curHeaderCount := headerCount[csvColumnHeader]
 		if fieldInfo := getCSVFieldPosition(csvColumnHeader, outInnerStructInfo, curHeaderCount); fieldInfo != nil {
 			csvHeadersLabels[i] = fieldInfo
-			if ShouldAlignDuplicateHeadersWithStructFieldOrder {
+			if modifiers.shouldAlignDuplicateHeadersWithStructFieldOrder {
 				curHeaderCount++
 				headerCount[csvColumnHeader] = curHeaderCount
 			}
 		}
 	}
 	if err := maybeMissingStructFields(outInnerStructInfo.Fields, headers); err != nil {
-		if FailIfUnmatchedStructTags {
+		if modifiers.failIfUnmatchedStructTags {
 			return err
 		}
 	}
-	if FailIfDoubleHeaderNames {
+	if modifiers.failIfDoubleHeaderNames {
 		if err := maybeDoubleHeaderNames(headers); err != nil {
 			return err
 		}
@@ -367,7 +367,7 @@ func readEach(decoder SimpleDecoder, errHandler ErrorHandler, c any) error {
 	return nil
 }
 
-func readEachWithoutHeaders(decoder SimpleDecoder, c any) error {
+func readEachWithoutHeaders(decoder SimpleDecoder, c any, modifiers *Modifiers) error {
 	outValue, outType := getConcreteReflectValueAndType(c) // Get the concrete type (not pointer) (Slice<?> or Array<?>)
 	if err := ensureOutType(outType); err != nil {
 		return err
@@ -378,7 +378,7 @@ func readEachWithoutHeaders(decoder SimpleDecoder, c any) error {
 	if err := ensureOutInnerType(outInnerType); err != nil {
 		return err
 	}
-	outInnerStructInfo := getStructInfo(outInnerType) // Get the inner struct info to get CSV annotations
+	outInnerStructInfo := getStructInfo(outInnerType, modifiers) // Get the inner struct info to get CSV annotations
 	if outInnerStructInfo.Err != nil {
 		return outInnerStructInfo.Err
 	}
@@ -414,7 +414,7 @@ func readEachWithoutHeaders(decoder SimpleDecoder, c any) error {
 	return nil
 }
 
-func readToWithoutHeaders(decoder Decoder, out any) error {
+func readToWithoutHeaders(decoder Decoder, out any, modifiers *Modifiers) error {
 	outValue, outType := getConcreteReflectValueAndType(out) // Get the concrete type (not pointer) (Slice<?> or Array<?>)
 	if err := ensureOutType(outType); err != nil {
 		return err
@@ -433,7 +433,7 @@ func readToWithoutHeaders(decoder Decoder, out any) error {
 	if err := ensureOutCapacity(&outValue, len(csvRows)+1); err != nil { // Ensure the container is big enough to hold the CSV content
 		return err
 	}
-	outInnerStructInfo := getStructInfo(outInnerType) // Get the inner struct info to get CSV annotations
+	outInnerStructInfo := getStructInfo(outInnerType, modifiers) // Get the inner struct info to get CSV annotations
 	if outInnerStructInfo.Err != nil {
 		return outInnerStructInfo.Err
 	}

@@ -32,7 +32,7 @@ func Test_writeTo(t *testing.T) {
 		{Foo: "f", Bar: 1, Baz: "baz", Frop: 0.1, Blah: &blah, SPtr: &sptr},
 		{Foo: "e", Bar: 3, Baz: "b", Frop: 6.0 / 13, Blah: nil, SPtr: nil},
 	}
-	if err := writeTo(NewSafeCSVWriter(csv.NewWriter(e.out)), s, false); err != nil {
+	if err := writeTo(NewSafeCSVWriter(csv.NewWriter(e.out)), s, false, DefaultModifier()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -55,7 +55,7 @@ func Test_writeTo_Time(t *testing.T) {
 	s := []DateTime{
 		{Foo: d},
 	}
-	if err := writeTo(NewSafeCSVWriter(csv.NewWriter(e.out)), s, true); err != nil {
+	if err := writeTo(NewSafeCSVWriter(csv.NewWriter(e.out)), s, true, DefaultModifier()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -86,7 +86,7 @@ func Test_writeTo_NoHeaders(t *testing.T) {
 		{Foo: "f", Bar: 1, Baz: "baz", Frop: 0.1, Blah: &blah, SPtr: &sptr},
 		{Foo: "e", Bar: 3, Baz: "b", Frop: 6.0 / 13, Blah: nil, SPtr: nil},
 	}
-	if err := writeTo(NewSafeCSVWriter(csv.NewWriter(e.out)), s, true); err != nil {
+	if err := writeTo(NewSafeCSVWriter(csv.NewWriter(e.out)), s, true, DefaultModifier()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -123,7 +123,7 @@ func Test_writeTo_multipleTags(t *testing.T) {
 		{Foo: "abc", Bar: 123},
 		{Foo: "def", Bar: 234},
 	}
-	if err := writeTo(NewSafeCSVWriter(csv.NewWriter(e.out)), s, false); err != nil {
+	if err := writeTo(NewSafeCSVWriter(csv.NewWriter(e.out)), s, false, DefaultModifier()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -160,7 +160,7 @@ func Test_writeTo_slice(t *testing.T) {
 		},
 	}
 
-	if err := writeTo(NewSafeCSVWriter(csv.NewWriter(e.out)), s, false); err != nil {
+	if err := writeTo(NewSafeCSVWriter(csv.NewWriter(e.out)), s, false, DefaultModifier()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -218,7 +218,7 @@ func Test_writeTo_slice_structs(t *testing.T) {
 			},
 		},
 	}
-	if err := writeTo(NewSafeCSVWriter(csv.NewWriter(e.out)), s, false); err != nil {
+	if err := writeTo(NewSafeCSVWriter(csv.NewWriter(e.out)), s, false, DefaultModifier()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -247,7 +247,7 @@ func Test_writeTo_embed(t *testing.T) {
 			Grault: math.Pi,
 		},
 	}
-	if err := writeTo(NewSafeCSVWriter(csv.NewWriter(e.out)), s, false); err != nil {
+	if err := writeTo(NewSafeCSVWriter(csv.NewWriter(e.out)), s, false, DefaultModifier()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -276,7 +276,7 @@ func Test_writeTo_embedptr(t *testing.T) {
 			Grault: math.Pi,
 		},
 	}
-	if err := writeTo(NewSafeCSVWriter(csv.NewWriter(e.out)), s, false); err != nil {
+	if err := writeTo(NewSafeCSVWriter(csv.NewWriter(e.out)), s, false, DefaultModifier()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -297,7 +297,7 @@ func Test_writeTo_embedptr_nil(t *testing.T) {
 	s := []EmbedPtrSample{
 		{},
 	}
-	if err := writeTo(NewSafeCSVWriter(csv.NewWriter(e.out)), s, false); err != nil {
+	if err := writeTo(NewSafeCSVWriter(csv.NewWriter(e.out)), s, false, DefaultModifier()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -320,7 +320,7 @@ func Test_writeTo_embedmarshal(t *testing.T) {
 			Foo: &MarshalSample{Dummy: "bar"},
 		},
 	}
-	if err := writeTo(NewSafeCSVWriter(csv.NewWriter(e.out)), s, false); err != nil {
+	if err := writeTo(NewSafeCSVWriter(csv.NewWriter(e.out)), s, false, DefaultModifier()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -350,7 +350,7 @@ func Test_writeTo_embedmarshalCSV(t *testing.T) {
 	}
 
 	// Next, attempt to write our test data to a CSV format
-	if err := writeTo(NewSafeCSVWriter(csv.NewWriter(e.out)), s, false); err != nil {
+	if err := writeTo(NewSafeCSVWriter(csv.NewWriter(e.out)), s, false, DefaultModifier()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -389,7 +389,7 @@ func Test_writeTo_complex_embed(t *testing.T) {
 			Corge:      "hhh",
 		},
 	}
-	if err := writeTo(NewSafeCSVWriter(csv.NewWriter(e.out)), sfs, false); err != nil {
+	if err := writeTo(NewSafeCSVWriter(csv.NewWriter(e.out)), sfs, false, DefaultModifier()); err != nil {
 		t.Fatal(err)
 	}
 	lines, err := csv.NewReader(&b).ReadAll()
@@ -431,7 +431,7 @@ func Test_writeTo_complex_inner_struct_embed(t *testing.T) {
 		},
 	}
 
-	if err := writeTo(NewSafeCSVWriter(csv.NewWriter(e.out)), sfs, true); err != nil {
+	if err := writeTo(NewSafeCSVWriter(csv.NewWriter(e.out)), sfs, true, DefaultModifier()); err != nil {
 		t.Fatal(err)
 	}
 	lines, err := csv.NewReader(&b).ReadAll()
@@ -545,28 +545,6 @@ func TestColumnNameStartingWithPartial(t *testing.T) {
 	}
 }
 
-// TestCustomTagSeparatorMarshal tests for custom tag separator in marshalling.
-func TestCustomTagSeparatorMarshal(t *testing.T) {
-	samples := []RenamedSample{
-		{RenamedFloatUnmarshaler: 1.4, RenamedFloatDefault: 1.5},
-		{RenamedFloatUnmarshaler: 2.3, RenamedFloatDefault: 2.4},
-	}
-
-	TagSeparator = " | "
-	// Switch back to default TagSeparator after this
-	defer func() {
-		TagSeparator = ","
-	}()
-
-	csvContent, err := MarshalString(&samples)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if csvContent != "foo|bar\n1,4|1.5\n2,3|2.4\n" {
-		t.Fatalf("Error marshaling floats with , as separator. Expected \nfoo|bar\n1,4|1.5\n2,3|2.4\ngot:\n%v", csvContent)
-	}
-}
-
 func (rf *RenamedFloat64Unmarshaler) MarshalCSV() (csv string, err error) {
 	if *rf == RenamedFloat64Unmarshaler(4.2) {
 		return "", MarshalError{"Test error: Invalid float 4.2"}
@@ -621,7 +599,7 @@ func Test_writeTo_nested_struct(t *testing.T) {
 			}},
 		},
 	}
-	if err := writeTo(NewSafeCSVWriter(csv.NewWriter(e.out)), s, false); err != nil {
+	if err := writeTo(NewSafeCSVWriter(csv.NewWriter(e.out)), s, false, DefaultModifier()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -674,7 +652,7 @@ func Test_non_marshaling_nested_fields_are_prefixed(t *testing.T) {
 			Foo:    time3,
 		},
 	}
-	if err := writeTo(NewSafeCSVWriter(csv.NewWriter(e.out)), s, false); err != nil {
+	if err := writeTo(NewSafeCSVWriter(csv.NewWriter(e.out)), s, false, DefaultModifier()); err != nil {
 		t.Fatal(err)
 	}
 	lines, err := csv.NewReader(&b).ReadAll()
@@ -695,7 +673,7 @@ func Test_writeTo_inline_nested_struct(t *testing.T) {
 	s := []InlineFooSample{
 		{Bar: InlineBar{A: 1, B: 2}, X: 3},
 	}
-	if err := writeTo(NewSafeCSVWriter(csv.NewWriter(e.out)), s, false); err != nil {
+	if err := writeTo(NewSafeCSVWriter(csv.NewWriter(e.out)), s, false, DefaultModifier()); err != nil {
 		t.Fatal(err)
 	}
 	lines, err := csv.NewReader(&b).ReadAll()

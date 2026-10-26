@@ -1,9 +1,3 @@
-// Copyright 2014 Jonathan Picques. All rights reserved.
-// Use of this source code is governed by a MIT license
-// The license can be found in the LICENSE file.
-
-// The GoCSV package aims to provide easy CSV serialization and deserialization to the golang programming language
-
 package gocsv
 
 import (
@@ -15,30 +9,15 @@ import (
 	"os"
 	"reflect"
 	"strings"
-	"sync"
 	"sync/atomic"
 )
 
-// FailIfUnmatchedStructTags indicates whether it is considered an error when there is an unmatched
-// struct tag.
-var FailIfUnmatchedStructTags = false
-
-// FailIfDoubleHeaderNames indicates whether it is considered an error when a header name is repeated
-// in the csv header.
-var FailIfDoubleHeaderNames = false
-
-// ShouldAlignDuplicateHeadersWithStructFieldOrder indicates whether we should align duplicate CSV
-// headers per their alignment in the struct definition.
-var ShouldAlignDuplicateHeadersWithStructFieldOrder = false
-
-// TagName defines key in the struct field's tag to scan
-var TagName = "csv"
-
-// TagSeparator defines separator string for multiple csv tags in struct fields
-var TagSeparator = ","
-
-// FieldsCombiner defines how to combine parent struct with child struct
-var FieldsCombiner = "."
+const (
+	// TagName defines key in the struct field's tag to scan
+	TagName = "csv"
+	// TagSeparator defines separator string for multiple csv tags in struct fields
+	TagSeparator = ","
+)
 
 // Normalizer is a function that takes and returns a string. It is applied to
 // struct and header field values before they are compared. It can be used to alter
@@ -52,8 +31,7 @@ type ErrorHandler func(*csv.ParseError) bool
 // built with it. SetHeaderNormalizer replaces both at once, so it is safe to
 // call while other goroutines are reading or writing CSV.
 type headerNormalization struct {
-	normalize   Normalizer
-	structInfos sync.Map
+	normalize Normalizer
 }
 
 // currentHeaderNormalization holds a *headerNormalization, initially with a nop Normalizer.
@@ -179,93 +157,141 @@ func MarshalBytesWithoutHeaders(in any) (out []byte, err error) {
 }
 
 // Marshal returns the CSV in writer from the interface.
-func Marshal(in any, out io.Writer) (err error) {
+func Marshal(in any, out io.Writer, options ...OptionModifier) (err error) {
 	writer := getCSVWriter(out)
-	return writeTo(writer, in, false)
+	modifier := DefaultModifier()
+	for _, option := range options {
+		option(modifier)
+	}
+	return writeTo(writer, in, false, modifier)
 }
 
 // MarshalWithoutHeaders returns the CSV in writer from the interface.
-func MarshalWithoutHeaders(in any, out io.Writer) (err error) {
+func MarshalWithoutHeaders(in any, out io.Writer, options ...OptionModifier) (err error) {
 	writer := getCSVWriter(out)
-	return writeTo(writer, in, true)
+	modifier := DefaultModifier()
+	for _, option := range options {
+		option(modifier)
+	}
+	return writeTo(writer, in, true, modifier)
 }
 
 // MarshalChan returns the CSV read from the channel.
-func MarshalChan(c <-chan any, out CSVWriter) error {
-	return writeFromChan(out, c, false)
+func MarshalChan(c <-chan any, out CSVWriter, options ...OptionModifier) error {
+	modifier := DefaultModifier()
+	for _, option := range options {
+		option(modifier)
+	}
+	return writeFromChan(out, c, false, modifier)
 }
 
 // MarshalChanWithoutHeaders returns the CSV read from the channel.
-func MarshalChanWithoutHeaders(c <-chan any, out CSVWriter) error {
-	return writeFromChan(out, c, true)
+func MarshalChanWithoutHeaders(c <-chan any, out CSVWriter, options ...OptionModifier) error {
+	modifier := DefaultModifier()
+	for _, option := range options {
+		option(modifier)
+	}
+	return writeFromChan(out, c, true, modifier)
 }
 
 // MarshalCSV returns the CSV in writer from the interface.
-func MarshalCSV(in any, out CSVWriter) (err error) {
-	return writeTo(out, in, false)
+func MarshalCSV(in any, out CSVWriter, options ...OptionModifier) (err error) {
+	modifier := DefaultModifier()
+	for _, option := range options {
+		option(modifier)
+	}
+	return writeTo(out, in, false, modifier)
 }
 
 // MarshalCSVWithoutHeaders returns the CSV in writer from the interface.
-func MarshalCSVWithoutHeaders(in any, out CSVWriter) (err error) {
-	return writeTo(out, in, true)
+func MarshalCSVWithoutHeaders(in any, out CSVWriter, options ...OptionModifier) (err error) {
+	modifier := DefaultModifier()
+	for _, option := range options {
+		option(modifier)
+	}
+	return writeTo(out, in, true, modifier)
 }
 
 // --------------------------------------------------------------------------
 // Unmarshal functions
 
 // UnmarshalFile parses the CSV from the file in the interface.
-func UnmarshalFile(in *os.File, out any) error {
-	return Unmarshal(in, out)
+func UnmarshalFile(in *os.File, out any, options ...OptionModifier) error {
+	return Unmarshal(in, out, options...)
 }
 
 // UnmarshalMultipartFile parses the CSV from the multipart file in the interface.
-func UnmarshalMultipartFile(in *multipart.File, out any) error {
-	return Unmarshal(convertTo(in), out)
+func UnmarshalMultipartFile(in *multipart.File, out any, options ...OptionModifier) error {
+	return Unmarshal(convertTo(in), out, options...)
 }
 
 // UnmarshalFileWithErrorHandler parses the CSV from the file in the interface.
-func UnmarshalFileWithErrorHandler(in *os.File, errHandler ErrorHandler, out any) error {
-	return UnmarshalWithErrorHandler(in, errHandler, out)
+func UnmarshalFileWithErrorHandler(in *os.File, errHandler ErrorHandler, out any, options ...OptionModifier) error {
+	return UnmarshalWithErrorHandler(in, errHandler, out, options...)
 }
 
 // UnmarshalString parses the CSV from the string in the interface.
-func UnmarshalString(in string, out any) error {
-	return Unmarshal(strings.NewReader(in), out)
+func UnmarshalString(in string, out any, options ...OptionModifier) error {
+	return Unmarshal(strings.NewReader(in), out, options...)
 }
 
 // UnmarshalBytes parses the CSV from the bytes in the interface.
-func UnmarshalBytes(in []byte, out any) error {
-	return Unmarshal(bytes.NewReader(in), out)
+func UnmarshalBytes(in []byte, out any, options ...OptionModifier) error {
+	return Unmarshal(bytes.NewReader(in), out, options...)
 }
 
 // Unmarshal parses the CSV from the reader in the interface.
-func Unmarshal(in io.Reader, out any) error {
-	return readTo(newSimpleDecoderFromReader(in), out)
+func Unmarshal(in io.Reader, out any, options ...OptionModifier) error {
+	modifier := DefaultModifier()
+	for _, option := range options {
+		option(modifier)
+	}
+	return readTo(newSimpleDecoderFromReader(in), out, modifier)
 }
 
 // Unmarshal parses the CSV from the reader in the interface.
-func UnmarshalWithErrorHandler(in io.Reader, errHandle ErrorHandler, out any) error {
-	return readToWithErrorHandler(newSimpleDecoderFromReader(in), errHandle, out)
+func UnmarshalWithErrorHandler(in io.Reader, errHandle ErrorHandler, out any, options ...OptionModifier) error {
+	modifier := DefaultModifier()
+	for _, option := range options {
+		option(modifier)
+	}
+	return readToWithErrorHandler(newSimpleDecoderFromReader(in), errHandle, out, modifier)
 }
 
 // UnmarshalWithoutHeaders parses the CSV from the reader in the interface.
-func UnmarshalWithoutHeaders(in io.Reader, out any) error {
-	return readToWithoutHeaders(newSimpleDecoderFromReader(in), out)
+func UnmarshalWithoutHeaders(in io.Reader, out any, options ...OptionModifier) error {
+	modifier := DefaultModifier()
+	for _, option := range options {
+		option(modifier)
+	}
+	return readToWithoutHeaders(newSimpleDecoderFromReader(in), out, modifier)
 }
 
 // UnmarshalCSVWithoutHeaders parses a headerless CSV with passed in CSV reader
-func UnmarshalCSVWithoutHeaders(in CSVReader, out any) error {
-	return readToWithoutHeaders(csvDecoder{in}, out)
+func UnmarshalCSVWithoutHeaders(in CSVReader, out any, options ...OptionModifier) error {
+	modifier := DefaultModifier()
+	for _, option := range options {
+		option(modifier)
+	}
+	return readToWithoutHeaders(csvDecoder{in}, out, modifier)
 }
 
 // UnmarshalDecoder parses the CSV from the decoder in the interface
-func UnmarshalDecoder(in Decoder, out any) error {
-	return readTo(in, out)
+func UnmarshalDecoder(in Decoder, out any, options ...OptionModifier) error {
+	modifier := DefaultModifier()
+	for _, option := range options {
+		option(modifier)
+	}
+	return readTo(in, out, modifier)
 }
 
 // UnmarshalCSV parses the CSV from the reader in the interface.
-func UnmarshalCSV(in CSVReader, out any) error {
-	return readTo(csvDecoder{in}, out)
+func UnmarshalCSV(in CSVReader, out any, options ...OptionModifier) error {
+	modifier := DefaultModifier()
+	for _, option := range options {
+		option(modifier)
+	}
+	return readTo(csvDecoder{in}, out, modifier)
 }
 
 // UnmarshalCSVToMap parses a CSV of 2 columns into a map.
@@ -307,37 +333,54 @@ func UnmarshalCSVToMap(in CSVReader, out any) error {
 
 // UnmarshalToChan parses the CSV from the reader and send each value in the chan c.
 // The channel must have a concrete type.
-func UnmarshalToChan(in io.Reader, c any) error {
+func UnmarshalToChan(in io.Reader, c any, options ...OptionModifier) error {
 	if c == nil {
 		return fmt.Errorf("goscv: channel is %v", c)
 	}
-	return readEach(newSimpleDecoderFromReader(in), nil, c)
+	modifier := DefaultModifier()
+	for _, option := range options {
+		option(modifier)
+	}
+	return readEach(newSimpleDecoderFromReader(in), nil, c, modifier)
 }
 
 // UnmarshalToChanWithErrorHandler parses the CSV from the reader in the interface.
-func UnmarshalToChanWithErrorHandler(in io.Reader, errorHandler ErrorHandler, c any) error {
+func UnmarshalToChanWithErrorHandler(in io.Reader, errorHandler ErrorHandler, c any, options ...OptionModifier) error {
 	if c == nil {
 		return fmt.Errorf("goscv: channel is %v", c)
 	}
-	return readEach(newSimpleDecoderFromReader(in), errorHandler, c)
+	modifier := DefaultModifier()
+	for _, option := range options {
+		option(modifier)
+	}
+	return readEach(newSimpleDecoderFromReader(in), errorHandler, c, modifier)
 }
 
 // UnmarshalToChanWithoutHeaders parses the CSV from the reader and send each value in the chan c.
 // The channel must have a concrete type.
-func UnmarshalToChanWithoutHeaders(in io.Reader, c any) error {
+func UnmarshalToChanWithoutHeaders(in io.Reader, c any, options ...OptionModifier) error {
 	if c == nil {
 		return fmt.Errorf("goscv: channel is %v", c)
 	}
-	return readEachWithoutHeaders(newSimpleDecoderFromReader(in), c)
+
+	modifier := DefaultModifier()
+	for _, option := range options {
+		option(modifier)
+	}
+	return readEachWithoutHeaders(newSimpleDecoderFromReader(in), c, modifier)
 }
 
 // UnmarshalDecoderToChan parses the CSV from the decoder and send each value in the chan c.
 // The channel must have a concrete type.
-func UnmarshalDecoderToChan(in SimpleDecoder, c any) error {
+func UnmarshalDecoderToChan(in SimpleDecoder, c any, options ...OptionModifier) error {
 	if c == nil {
 		return fmt.Errorf("goscv: channel is %v", c)
 	}
-	return readEach(in, nil, c)
+	modifier := DefaultModifier()
+	for _, option := range options {
+		option(modifier)
+	}
+	return readEach(in, nil, c, modifier)
 }
 
 // UnmarshalStringToChan parses the CSV from the string and send each value in the chan c.

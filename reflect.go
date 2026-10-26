@@ -57,21 +57,22 @@ func removeZeroWidthChars(s string) string {
 	}, s)
 }
 
-func getStructInfo(rType reflect.Type) *structInfo {
-	structInfos := &loadHeaderNormalization().structInfos
-	stInfo, ok := structInfos.Load(rType)
-	if ok {
-		return stInfo.(*structInfo)
+func getStructInfo(rType reflect.Type, modifiers *Modifiers) *structInfo {
+	fieldsList, err := getFieldInfos(
+		rType,
+		[]int{},
+		[]string{},
+		make(map[reflect.Type]bool),
+		modifiers,
+	)
+
+	return &structInfo{
+		Fields: fieldsList,
+		Err:    err,
 	}
-
-	fieldsList, err := getFieldInfos(rType, []int{}, []string{}, make(map[reflect.Type]bool))
-	stInfo = &structInfo{Fields: fieldsList, Err: err}
-	structInfos.Store(rType, stInfo)
-
-	return stInfo.(*structInfo)
 }
 
-func getFieldInfos(rType reflect.Type, parentIndexChain []int, parentKeys []string, ancestors map[reflect.Type]bool) ([]fieldInfo, error) {
+func getFieldInfos(rType reflect.Type, parentIndexChain []int, parentKeys []string, ancestors map[reflect.Type]bool, modifiers *Modifiers) ([]fieldInfo, error) {
 	if ancestors[rType] {
 		return nil, fmt.Errorf("cyclic struct type %s: exclude the recursive field with csv:\"-\"", rType)
 	}
@@ -123,7 +124,7 @@ func getFieldInfos(rType reflect.Type, parentIndexChain []int, parentKeys []stri
 				keys := make([]string, 0, len(parentKeys)*len(currFieldInfo.keys))
 				for _, pkey := range parentKeys {
 					for _, ckey := range currFieldInfo.keys {
-						keys = append(keys, normalizeName(fmt.Sprintf("%s%s%s", pkey, FieldsCombiner, ckey)))
+						keys = append(keys, normalizeName(fmt.Sprintf("%s%s%s", pkey, modifiers.fieldsCombiner, ckey)))
 					}
 					currFieldInfo.keys = keys
 				}
@@ -137,7 +138,7 @@ func getFieldInfos(rType reflect.Type, parentIndexChain []int, parentKeys []stri
 			if currFieldInfo != nil {
 				keys = currFieldInfo.keys
 			}
-			childFields, err := getFieldInfos(fieldType, indexChain, keys, ancestors)
+			childFields, err := getFieldInfos(fieldType, indexChain, keys, ancestors, modifiers)
 			if err != nil {
 				return nil, err
 			}
@@ -159,7 +160,7 @@ func getFieldInfos(rType reflect.Type, parentIndexChain []int, parentKeys []stri
 
 			// slices or arrays of Struct get special handling
 			if field.Type.Elem().Kind() == reflect.Struct {
-				fieldInfos, err := getFieldInfos(field.Type.Elem(), []int{}, []string{}, ancestors)
+				fieldInfos, err := getFieldInfos(field.Type.Elem(), []int{}, []string{}, ancestors, modifiers)
 				if err != nil {
 					return nil, err
 				}

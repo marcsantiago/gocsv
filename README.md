@@ -2,7 +2,24 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/marcsantiago/gocsv.svg)](https://pkg.go.dev/github.com/marcsantiago/gocsv)
 
-GoCSV maps CSV records to Go structs and serializes Go structs back to CSV. It supports struct tags, nested structs, custom value conversion, custom CSV readers and writers, and row-by-row processing.
+GoCSV maps CSV records to Go structs and writes Go structs back to CSV. It supports struct tags, nested structs, custom value conversion, configurable CSV readers and writers, and streaming records without loading an entire file into memory.
+
+## Contents
+
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Quick start](#quick-start)
+- [Struct tags](#struct-tags)
+- [Nested structs](#nested-structs)
+- [Per-call options](#per-call-options)
+- [Custom value conversion](#custom-value-conversion)
+- [Custom record decoding](#custom-record-decoding)
+- [Transforming values before decoding](#transforming-values-before-decoding)
+- [Streaming large CSV files](#streaming-large-csv-files)
+- [CSV without headers](#csv-without-headers)
+- [Custom CSV readers and writers](#custom-csv-readers-and-writers)
+- [Header matching](#header-matching)
+- [API reference](#api-reference)
 
 ## Requirements
 
@@ -10,15 +27,13 @@ Go 1.27 or newer.
 
 ## Installation
 
-Add GoCSV to your module:
-
 ```sh
 go get github.com/marcsantiago/gocsv
 ```
 
 ## Quick start
 
-Given this CSV data:
+Given a CSV file with a header row:
 
 ```csv
 client_id,client_name,client_age
@@ -27,13 +42,14 @@ client_id,client_name,client_age
 3,Vincent,32
 ```
 
-Map it to a struct using `csv` tags, then serialize the records back to CSV:
+Define a struct with `csv` tags, then unmarshal and marshal the records:
 
 ```go
 package main
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/marcsantiago/gocsv"
 )
@@ -45,13 +61,13 @@ type Client struct {
 }
 
 func main() {
-	input := "client_id,client_name,client_age\n" +
+	input := strings.NewReader("client_id,client_name,client_age\n" +
 		"1,Jose,42\n" +
 		"2,Daniel,26\n" +
-		"3,Vincent,32\n"
+		"3,Vincent,32\n")
 
 	var clients []Client
-	if err := gocsv.UnmarshalString(input, &clients); err != nil {
+	if err := gocsv.Unmarshal(input, &clients); err != nil {
 		panic(err)
 	}
 
@@ -61,77 +77,101 @@ func main() {
 
 	clients = append(clients, Client{ID: 4, Name: "John", Age: 21})
 
-	output, err := gocsv.MarshalString(&clients)
-	if err != nil {
+	var output strings.Builder
+	if err := gocsv.Marshal(&clients, &output); err != nil {
 		panic(err)
 	}
-	fmt.Print(output)
+	fmt.Print(output.String())
 }
 ```
 
-Use `Unmarshal`, `UnmarshalBytes`, or `UnmarshalFile` when the input comes from an `io.Reader`, a byte slice, or an `*os.File`. Use `Marshal`, `MarshalBytes`, or `MarshalFile` to write CSV to an `io.Writer`, a byte slice, or a file.
+Use `Unmarshal` for an `io.Reader`, `UnmarshalString` for a string, `UnmarshalBytes` for a byte slice, or `UnmarshalFile` for a file. The corresponding `Marshal` functions write to an `io.Writer`, return a string or byte slice, or write to a file.
 
 ## Struct tags
 
-GoCSV uses the `csv` struct tag by default. An exported field without a tag uses its Go field name as its column name.
+GoCSV uses the `csv` struct tag to name columns. If a field has no `csv` tag, its Go field name is used. Tag options are separated by commas.
 
 ```go
 type Client struct {
 	ID            int    `csv:"client_id"`
-	Name          string `csv:"client_name"`
-	Nickname      string `csv:"nickname,omitempty"`
+	Nickname      *string `csv:"nickname,omitempty"`
 	Country       string `csv:"country,partial"`
 	Status        string `csv:"status,default=active"`
 	InternalValue string `csv:"-"`
 }
 ```
 
-The tags support these options:
+| Tag                           | Behavior                                                                                                                   |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `csv:"client_id"`             | Use `client_id` as the column name.                                                                                        |
+| `csv:"-"`                     | Ignore the field.                                                                                                          |
+| `csv:"nickname,omitempty"`    | When decoding an empty cell into a pointer field, leave the leaf pointer unset. The column is not removed from CSV output. |
+| `csv:"status,default=active"` | Use `active` when decoding an empty cell.                                                                                  |
+| `csv:"country,partial"`       | Match a header containing `country`, such as `publisher_country`.                                                          |
 
-| Tag                           | Behavior                                                                                                                              |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `csv:"client_id"`             | Use `client_id` as the column name.                                                                                                   |
-| `csv:"-"`                     | Ignore the field.                                                                                                                     |
-| `csv:"nickname,omitempty"`    | When decoding an empty value into a pointer field, leave the leaf pointer unset. This does not remove the column from the CSV output. |
-| `csv:"status,default=active"` | When decoding an empty cell, use `active` as the value.                                                                               |
-| `csv:"country,partial"`       | Match a header that contains `country`, such as `publisher_country`.                                                                  |
+Header matching is exact by default, after any configured header normalization. The `partial` option allows substring matching for that field.
 
-Tag options are separated by commas by default. Matching is exact unless the `partial` option or a custom header normalizer is used.
+## Nested structs
 
-### Nested structs
-
-Nested structs are expanded into columns. By default, the parent field name is prefixed to each child field name:
+GoCSV expands nested structs into columns. By default, the parent field name is prefixed to each child field name, using `.` as the separator.
 
 ```go
-type Foo struct {
-	B Bar
-	X int `csv:"x"`
+type Address struct {
+	City    string `csv:"city"`
+	Country string `csv:"country"`
 }
 
-type Bar struct {
-	A int `csv:"a"`
-	B int `csv:"b"`
+type Client struct {
+	Name    string  `csv:"name"`
+	Address Address
 }
 ```
 
-The columns are `B.a`, `B.b`, and `x`.
+The nested columns are `Address.city` and `Address.country`, alongside `name`.
 
-Use `csv:"."` to inline a nested struct without the parent prefix:
+Use `csv:"."` to inline a nested struct and omit the parent prefix:
 
 ```go
-type Foo struct {
-	B Bar `csv:"."`
-	X int `csv:"x"`
+type Client struct {
+	Name    string  `csv:"name"`
+	Address Address `csv:"."`
 }
 ```
 
-The columns are `a`, `b`, and `x`.
+The resulting columns are `name`, `city`, and `country`.
 
-The default nested-field separator is `.`. The package-level `gocsv.FieldsCombiner` setting changes this separator. Set it before GoCSV first processes the relevant struct types: field metadata is cached. When decoding nested pointer structs, GoCSV allocates the pointers needed to reach a populated field. An `omitempty` option can leave an empty leaf pointer unset, but it does not prevent allocation of enclosing structs.
+When decoding nested pointer structs, GoCSV allocates the enclosing pointers needed to reach a populated field. `omitempty` can leave an empty leaf pointer unset, but does not prevent allocation of enclosing structs.
+
+## Per-call options
+
+Functions that accept `...OptionModifier` can be configured per call, instead of relying on package-level flags for these behaviors.
+
+```go
+err := gocsv.Unmarshal(
+	inputReader,
+	&clients,
+	gocsv.WithUnmatchTagFailure(true),
+	gocsv.WithDuplicateHeaderFailure(true),
+)
+if err != nil {
+	panic(err)
+}
+```
+
+Available options:
+
+| Option                             | Default | Behavior                                                                       |
+| ---------------------------------- | ------- | ------------------------------------------------------------------------------ |
+| `WithFieldsCombiner(separator)`    | `"."`   | Sets the separator used between parent and nested field names.                 |
+| `WithUnmatchTagFailure(true)`      | `false` | Returns an error when a tagged struct field does not match a CSV header.       |
+| `WithDuplicateHeaderFailure(true)` | `false` | Returns an error when the CSV header contains duplicate names.                 |
+| `WithAlignDuplicateHeader(true)`   | `false` | Aligns repeated header names with matching struct fields in declaration order. |
+
+For example, `gocsv.Unmarshal(inputReader, &clients, gocsv.WithFieldsCombiner("_"))` requests nested columns such as `Address_city` instead of `Address.city`. These options are supported by the core marshal/unmarshal functions and the streaming channel APIs that accept `...OptionModifier`; check the function signature when using a convenience wrapper.
 
 ## Custom value conversion
 
-Implement `MarshalCSV` and `UnmarshalCSV` when a type needs a representation different from its default Go value. GoCSV also supports `encoding.TextMarshaler`, `encoding.TextUnmarshaler`, and `fmt.Stringer` for marshaling.
+Implement `MarshalCSV` and `UnmarshalCSV` when a type needs a representation different from its default Go value. GoCSV also honors `encoding.TextMarshaler` and `fmt.Stringer` when marshaling, and `encoding.TextUnmarshaler` when unmarshaling.
 
 ```go
 package main
@@ -162,9 +202,9 @@ type Client struct {
 }
 ```
 
-## Customizing complete records
+## Custom record decoding
 
-For record types that need to interpret the header and each cell themselves, implement `UnmarshalCSVWithFields`. GoCSV calls the method for each header/value pair and uses it instead of its normal tag-to-field assignment for that record type.
+If a record needs to interpret column names and values itself, implement `UnmarshalCSVWithFields`. GoCSV calls the method for each header/value pair instead of assigning those values through the record's struct tags.
 
 ```go
 type Record struct {
@@ -180,7 +220,7 @@ func (r *Record) UnmarshalCSVWithFields(key, value string) error {
 }
 ```
 
-The method has this signature:
+The method signature is:
 
 ```go
 UnmarshalCSVWithFields(key, value string) error
@@ -190,28 +230,29 @@ Return an error when a value cannot be handled. GoCSV wraps conversion errors wi
 
 ## Transforming values before decoding
 
-Use a custom `Decoder` with `UnmarshalDecoder` to normalize data after CSV parsing but before values are assigned to struct fields. This is useful when a source uses a sentinel value that Go cannot convert directly—for example, mapping `N/A` to `NaN` for a floating-point `Height` column without changing the same text in other columns.
+Use a custom `Decoder` with `UnmarshalDecoder` to normalize values after CSV parsing but before they are assigned to struct fields. This is useful when a source uses a sentinel value that Go cannot convert directly—for example, mapping `N/A` to `NaN` for a floating-point column without changing the same text in other columns.
 
-See the [runnable sanitizing example](sanitize_example_test.go). It preserves the header row and changes only data cells in the configured column. Quoted fields, Unicode, and ordinary conversion errors continue to be handled by the CSV reader and GoCSV as usual.
+See the [runnable sanitizing example](sanitize_example_test.go). It preserves the header row and changes only data cells in the configured column. CSV quoting, Unicode, and ordinary conversion errors continue to be handled by the CSV reader and GoCSV.
 
-A decoder based on `csv.Reader.ReadAll` holds all records in memory. For row-by-row processing, implement a `SimpleDecoder` with `GetCSVRow` and `GetCSVRows`, then use `UnmarshalDecoderToChan` or `UnmarshalDecoderToCallback`.
+A decoder based on `csv.Reader.ReadAll` holds every record in memory. For row-by-row processing, implement a `SimpleDecoder` with `GetCSVRow` and `GetCSVRows`, then use `UnmarshalDecoderToChan` or `UnmarshalDecoderToCallback`.
 
 ## Streaming large CSV files
 
-If you do not need all records in memory at once, use the channel or callback APIs. For example:
+To process records without collecting them all in a slice, use the channel or callback APIs.
 
 ```go
-err := gocsv.UnmarshalToCallback(inputReader, func(client Client) {
+err := gocsv.UnmarshalToCallback(inputReader, func(client Client) error {
 	fmt.Println(client.Name)
+	return nil
 })
 if err != nil {
 	panic(err)
 }
 ```
 
-The callback must accept one record value. It may also return an `error`; a returned error is propagated after the parser has been drained. For channel-based processing, use `UnmarshalToChan` or `UnmarshalDecoderToChan` with a channel whose element type is your record type.
+The callback receives one record at a time. A callback may return an error; GoCSV stops invoking it after the first callback error, drains the parser, and returns that error. For channel-based processing, use `UnmarshalToChan` or `UnmarshalDecoderToChan` with a channel whose element type matches the record type.
 
-## CSV without a header row
+## CSV without headers
 
 Use the `WithoutHeaders` variants when the input or output has no header row:
 
@@ -220,15 +261,14 @@ if err := gocsv.UnmarshalWithoutHeaders(inputReader, &clients); err != nil {
 	panic(err)
 }
 
-output, err := gocsv.MarshalStringWithoutHeaders(&clients)
-if err != nil {
+if err := gocsv.MarshalWithoutHeaders(&clients, outputWriter); err != nil {
 	panic(err)
 }
 ```
 
-## Custom CSV reader and writer
+## Custom CSV readers and writers
 
-GoCSV uses the standard library's `encoding/csv` reader and writer by default. Set a custom reader or writer when the file uses another delimiter or requires different parsing behavior.
+GoCSV uses the standard library's `encoding/csv` reader and writer by default. Configure a custom reader or writer when a file uses another delimiter or needs different parsing behavior.
 
 ```go
 func configurePipeDelimitedCSV() {
@@ -246,18 +286,17 @@ func configurePipeDelimitedCSV() {
 }
 ```
 
-Call `configurePipeDelimitedCSV` during application startup, before reading or writing CSV. `SetCSVReader` and `SetCSVWriter` change package-level configuration; they are not per-call settings. `gocsv.LazyCSVReader` is also available when you want `LazyQuotes` and `TrimLeadingSpace` enabled.
+Call this during application startup, before reading or writing CSV. `SetCSVReader` and `SetCSVWriter` change package-level configuration, not per-call settings. `gocsv.LazyCSVReader` is available when `LazyQuotes` and `TrimLeadingSpace` should be enabled.
 
-## Header matching and validation
+## Header matching
 
-The package offers global settings for applications that need stricter validation or different header matching:
+Use `SetHeaderNormalizer` to normalize CSV headers and struct field names before matching. For example, `gocsv.SetHeaderNormalizer(strings.ToLower)` enables case-insensitive matching.
 
-- `gocsv.SetHeaderNormalizer(fn)` normalizes both CSV headers and struct field names before matching. For example, `gocsv.SetHeaderNormalizer(strings.ToLower)` enables case-insensitive matching. This setting can be changed safely while other goroutines are reading or writing CSV.
-- `gocsv.FailIfUnmatchedStructTags = true` returns an error when expected struct fields do not match CSV headers.
-- `gocsv.FailIfDoubleHeaderNames = true` returns an error when the CSV header contains duplicate names.
-- `gocsv.ShouldAlignDuplicateHeadersWithStructFieldOrder = true` aligns repeated header names with matching struct fields in declaration order.
+```go
+gocsv.SetHeaderNormalizer(strings.ToLower)
+```
 
-These are package-level settings. Configure them deliberately when initializing the application.
+The normalizer is package-level configuration and may be changed safely while other goroutines are reading or writing CSV. Set it deliberately during application initialization if every call should share the same matching behavior. Use the per-call validation options described above when stricter matching should apply to selected operations.
 
 ## API reference
 

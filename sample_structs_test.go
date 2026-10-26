@@ -51,6 +51,7 @@ type MarshalSample struct {
 func (m MarshalSample) MarshalText() ([]byte, error) {
 	return []byte(m.Dummy), nil
 }
+
 func (m *MarshalSample) UnmarshalText(text []byte) error {
 	m.Dummy = string(text)
 	return nil
@@ -114,8 +115,10 @@ type SkipFieldSample struct {
 }
 
 // Testtype for unmarshal/marshal functions on renamed basic types
-type RenamedFloat64Unmarshaler float64
-type RenamedFloat64Default float64
+type (
+	RenamedFloat64Unmarshaler float64
+	RenamedFloat64Default     float64
+)
 
 type RenamedSample struct {
 	RenamedFloatUnmarshaler RenamedFloat64Unmarshaler `csv:"foo"`
@@ -125,16 +128,6 @@ type RenamedSample struct {
 type MultiTagSample struct {
 	Foo string `csv:"Baz,foo"`
 	Bar int    `csv:"BAR"`
-}
-
-type TagSeparatorSample struct {
-	Foo string `csv:"Baz|foo"`
-	Bar int    `csv:"BAR"`
-}
-
-type CustomTagSample struct {
-	Foo string `custom:"foo"`
-	Bar string `csv:"BAR"`
 }
 
 type DateTime struct {
