@@ -8,24 +8,35 @@ import (
 
 // Unmarshaller is a CSV to struct unmarshaller.
 type Unmarshaller struct {
-	reader                 *csv.Reader
 	Headers                []string
-	fieldInfoMap           []*fieldInfo
 	MismatchedHeaders      []string
 	MismatchedStructFields []string
-	outType                reflect.Type
-	out                    any
+
+	reader       *csv.Reader
+	fieldInfoMap []*fieldInfo
+	modifiers    *Modifiers
+	outType      reflect.Type
+	out          any
 }
 
 // NewUnmarshaller creates an unmarshaller from a csv.Reader and a struct.
-func NewUnmarshaller(reader *csv.Reader, out any) (*Unmarshaller, error) {
+func NewUnmarshaller(reader *csv.Reader, out any, options ...OptionModifier) (*Unmarshaller, error) {
 	headers, err := reader.Read()
 	if err != nil {
 		return nil, err
 	}
 	headers = normalizeHeaders(headers)
 
-	um := &Unmarshaller{reader: reader, outType: reflect.TypeOf(out)}
+	modifier := DefaultModifier()
+	for _, option := range options {
+		option(modifier)
+	}
+
+	um := &Unmarshaller{
+		reader:    reader,
+		outType:   reflect.TypeOf(out),
+		modifiers: modifier,
+	}
 	err = validate(um, out, headers)
 	if err != nil {
 		return nil, err
@@ -64,7 +75,7 @@ func validate(um *Unmarshaller, s any, headers []string) error {
 	if err := ensureOutInnerType(concreteType); err != nil {
 		return err
 	}
-	structInfo := getStructInfo(concreteType) // Get struct info to get CSV annotations.
+	structInfo := getStructInfo(concreteType, um.modifiers) // Get struct info to get CSV annotations.
 	if structInfo.Err != nil {
 		return structInfo.Err
 	}
@@ -77,14 +88,14 @@ func validate(um *Unmarshaller, s any, headers []string) error {
 		curHeaderCount := headerCount[csvColumnHeader]
 		if fieldInfo := getCSVFieldPosition(csvColumnHeader, structInfo, curHeaderCount); fieldInfo != nil {
 			csvHeadersLabels[i] = fieldInfo
-			if ShouldAlignDuplicateHeadersWithStructFieldOrder {
+			if um.modifiers.shouldAlignDuplicateHeadersWithStructFieldOrder {
 				curHeaderCount++
 				headerCount[csvColumnHeader] = curHeaderCount
 			}
 		}
 	}
 
-	if FailIfDoubleHeaderNames {
+	if um.modifiers.failIfDoubleHeaderNames {
 		if err := maybeDoubleHeaderNames(headers); err != nil {
 			return err
 		}

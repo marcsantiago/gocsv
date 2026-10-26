@@ -56,8 +56,6 @@ func (date *DateTime) UnmarshalCSV(csv string) (err error) {
 }
 
 func main() {
-	// set the pipe as the delimiter for writing
-	gocsv.TagSeparator = "|"
 	// set the pipe as the delimiter for reading
 	gocsv.SetCSVReader(func(in io.Reader) gocsv.CSVReader {
 		r := csv.NewReader(in)
